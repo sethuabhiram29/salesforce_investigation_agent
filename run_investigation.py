@@ -95,11 +95,13 @@ def run_interactive_ticket(ticket: Dict[str, Any], auto_approve: bool = False):
 
                 print("\n  [Evidence Gathered via ToolNode / MCP]")
                 for ev in evidence:
-                    print(f"    - [{ev.get('evidence_id')}] Tool '{ev.get('tool_name')}' observed:")
-                    if ev.get("observed_value"):
-                        obs = ev.get("observed_value")
+                    field_str = f" Field '{ev.get('field_name')}' =" if ev.get("field_name") else ""
+                    print(f"    - [{ev.get('evidence_id')}] Tool '{ev.get('tool_name')}' observed{field_str}:")
+                    obs = ev.get("observed_value")
+                    if obs is not None:
                         if isinstance(obs, dict):
-                            print(f"        IsActive: {obs.get('IsActive')}, FederationIdentifier: {obs.get('FederationIdentifier')}")
+                            vals = ", ".join(f"{k}: {v}" for k, v in obs.items())
+                            print(f"        {vals}")
                         else:
                             print(f"        {obs}")
                     elif ev.get("raw_output"):
@@ -175,15 +177,23 @@ def run_interactive_ticket(ticket: Dict[str, Any], auto_approve: bool = False):
 def main():
     reset_fixture_state()
 
-    print("\nSelect a ticket to investigate:")
-    print("1. INC10001: Jane Doe cannot login via Okta SSO (Missing Federation ID - LOGIN-4)")
-    print("2. INC10002: John Smith locked out after leave (Deactivated Delegated Admin - LOGIN-3)")
-    print("3. INC10003: General access ticket ('Can't access salesforce at all') -> Dynamic diagnosis & fallback")
-    print("4. INC10004: Sarah Connor cannot edit Account / compare with Alex Taylor (OBJECT-1/2)")
-    print("5. INC10005: Sarah Connor cannot view Opportunity 006xx000001OPP (RECORD-3)")
-    print("6. Custom: Enter your own incident details")
+    auto_approve = "--auto-approve" in sys.argv
+    choice = None
 
-    choice = input("\nEnter choice [1-6] (default 1): ").strip()
+    for i, arg in enumerate(sys.argv):
+        if arg in ("--ticket", "-t") and i + 1 < len(sys.argv):
+            choice = sys.argv[i + 1]
+
+    if not choice:
+        print("\nSelect a ticket to investigate:")
+        print("1. INC10001: Jane Doe cannot login via Okta SSO (Missing Federation ID - LOGIN-4)")
+        print("2. INC10002: John Smith locked out after leave (Deactivated Delegated Admin - LOGIN-3)")
+        print("3. INC10003: General access ticket ('Can't access salesforce at all') -> Dynamic diagnosis & fallback")
+        print("4. INC10004: Sarah Connor cannot edit Account / compare with Alex Taylor (OBJECT-1/2)")
+        print("5. INC10005: Sarah Connor cannot view Opportunity 006xx000001OPP (RECORD-3)")
+        print("6. Custom: Enter your own incident details")
+        choice = input("\nEnter choice [1-6] (default 1): ").strip()
+
     if choice == "2":
         ticket = servicenow_get_incident("INC10002")
     elif choice == "3":
@@ -221,7 +231,7 @@ def main():
     else:
         ticket = servicenow_get_incident("INC10001")
 
-    run_interactive_ticket(ticket)
+    run_interactive_ticket(ticket, auto_approve=auto_approve)
 
 
 if __name__ == "__main__":

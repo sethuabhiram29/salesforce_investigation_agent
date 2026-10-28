@@ -156,26 +156,14 @@ class DiagnosisToolGraph:
         # Step 1: User Search & Identity Resolution (Check Cache First)
         user_details = cache.get("User")
         ev_search_id = None
-        ev_details_id = None
 
         for ev in recorded_evidence:
-            if ev.get("tool_name") == "salesforce_user_search" and not ev_search_id:
+            if ev.get("tool_name") in ["salesforce_user_search", "salesforce_get_basic_user"] and not ev_search_id:
                 ev_search_id = ev.get("evidence_id")
-            if ev.get("tool_name") == "salesforce_get_user_details" and not ev_details_id:
-                ev_details_id = ev.get("evidence_id")
+                break
 
         if not user_details:
             search_results = salesforce_user_search(target_identifier)
-            ev_search_id = f"ev_user_search_{uuid.uuid4().hex[:6]}"
-            new_ev = {
-                "evidence_id": ev_search_id,
-                "tool_name": "salesforce_user_search",
-                "query": target_identifier,
-                "raw_output": search_results,
-            }
-            recorded_evidence.append(new_ev)
-            new_evidence.append(new_ev)
-
             identity_check = validate_user_identity_resolution(search_results)
             if identity_check["status"] == "not_found":
                 return (
@@ -208,39 +196,49 @@ class DiagnosisToolGraph:
             matched_user = identity_check["user"]
             user_id = matched_user["Id"]
 
-            # Fetch detailed user record
+            # Fetch detailed user record into in-memory cache for on-demand field evaluation
             user_details = salesforce_get_user_details(user_id)
-            ev_details_id = f"ev_user_details_{uuid.uuid4().hex[:6]}"
-            new_ev_details = {
-                "evidence_id": ev_details_id,
-                "tool_name": "salesforce_get_user_details",
-                "field_name": "User",
-                "observed_value": user_details,
-                "raw_output": user_details,
-            }
-            recorded_evidence.append(new_ev_details)
-            new_evidence.append(new_ev_details)
             cache["User"] = user_details
             cache[f"User:{user_id}"] = user_details
+
+            # Store only minimal core identity in evidence list
+            ev_search_id = f"ev_user_identity_{uuid.uuid4().hex[:6]}"
+            basic_identity = {
+                "Id": user_details.get("Id"),
+                "Username": user_details.get("Username"),
+                "Email": user_details.get("Email"),
+                "Name": user_details.get("Name") or f"{user_details.get('FirstName', '')} {user_details.get('LastName', '')}".strip(),
+                "IsActive": user_details.get("IsActive"),
+            }
+            new_ev = {
+                "evidence_id": ev_search_id,
+                "tool_name": "salesforce_user_search",
+                "field_name": "UserIdentity",
+                "user_id": user_id,
+                "observed_value": basic_identity,
+            }
+            recorded_evidence.append(new_ev)
+            new_evidence.append(new_ev)
         else:
             user_id = user_details.get("Id", target_identifier)
             if not ev_search_id:
-                ev_search_id = f"ev_user_search_{uuid.uuid4().hex[:6]}"
-                recorded_evidence.append({
+                ev_search_id = f"ev_user_identity_{uuid.uuid4().hex[:6]}"
+                basic_identity = {
+                    "Id": user_details.get("Id"),
+                    "Username": user_details.get("Username"),
+                    "Email": user_details.get("Email"),
+                    "Name": user_details.get("Name") or f"{user_details.get('FirstName', '')} {user_details.get('LastName', '')}".strip(),
+                    "IsActive": user_details.get("IsActive"),
+                }
+                new_ev = {
                     "evidence_id": ev_search_id,
                     "tool_name": "salesforce_user_search",
-                    "query": target_identifier,
-                    "raw_output": [user_details],
-                })
-            if not ev_details_id:
-                ev_details_id = f"ev_user_details_{uuid.uuid4().hex[:6]}"
-                recorded_evidence.append({
-                    "evidence_id": ev_details_id,
-                    "tool_name": "salesforce_get_user_details",
-                    "field_name": "User",
-                    "observed_value": user_details,
-                    "raw_output": user_details,
-                })
+                    "field_name": "UserIdentity",
+                    "user_id": user_id,
+                    "observed_value": basic_identity,
+                }
+                recorded_evidence.append(new_ev)
+                new_evidence.append(new_ev)
 
         # Step 2: Evaluate against the specific candidate skill criteria
         norm_code = normalize_issue_code(candidate_issue_code)
@@ -256,6 +254,18 @@ class DiagnosisToolGraph:
                 "Username": user_details.get("Username"),
                 "Email": user_details.get("Email"),
             }
+
+            # On-demand field evidence for FederationIdentifier
+            ev_fed_id = f"ev_fed_id_{uuid.uuid4().hex[:6]}"
+            ev_fed_record = {
+                "evidence_id": ev_fed_id,
+                "tool_name": "salesforce_get_user_field",
+                "field_name": "FederationIdentifier",
+                "user_id": user_id,
+                "observed_value": fed_id,
+            }
+            recorded_evidence.append(ev_fed_record)
+            new_evidence.append(ev_fed_record)
 
             if is_active and (fed_id is None or str(fed_id).strip() == ""):
                 result = DiagnosisResult(
@@ -273,7 +283,7 @@ class DiagnosisToolGraph:
                         ),
                         Finding(
                             claim="FederationIdentifier field on active user record is null/empty",
-                            evidence_refs=[ev_details_id],
+                            evidence_refs=[ev_fed_id],
                         ),
                     ],
                     unresolved_questions=[],
@@ -291,7 +301,7 @@ class DiagnosisToolGraph:
                     findings=[
                         Finding(
                             claim="User is inactive in Salesforce, which contradicts LOGIN-4 confirmation criteria",
-                            evidence_refs=[ev_details_id],
+                            evidence_refs=[ev_fed_id],
                         )
                     ],
                     unresolved_questions=["Consider candidate issue LOGIN-3 (User Account Deactivated) instead."],
@@ -309,7 +319,7 @@ class DiagnosisToolGraph:
                     findings=[
                         Finding(
                             claim=f"FederationIdentifier is already populated with '{fed_id}', contradicting LOGIN-4",
-                            evidence_refs=[ev_details_id],
+                            evidence_refs=[ev_fed_id],
                         )
                     ],
                     unresolved_questions=["FederationIdentifier exists. Check other authentication/SSO factors."],
@@ -350,6 +360,18 @@ class DiagnosisToolGraph:
                 "Email": user_details.get("Email"),
             }
 
+            # On-demand field evidence for IsActive & DeactivationActor
+            ev_active_id = f"ev_active_{uuid.uuid4().hex[:6]}"
+            ev_active_record = {
+                "evidence_id": ev_active_id,
+                "tool_name": "salesforce_get_user_field",
+                "field_name": "IsActive",
+                "user_id": user_id,
+                "observed_value": {"IsActive": is_active, "DeactivationActor": deactivation_actor},
+            }
+            recorded_evidence.append(ev_active_record)
+            new_evidence.append(ev_active_record)
+
             if not is_active:
                 result = DiagnosisResult(
                     status="confirmed",
@@ -366,7 +388,7 @@ class DiagnosisToolGraph:
                         ),
                         Finding(
                             claim=f"User account is deactivated in Salesforce NA org (IsActive=False). Actor classification: {deactivation_actor}.",
-                            evidence_refs=[ev_details_id],
+                            evidence_refs=[ev_active_id],
                         ),
                     ],
                     unresolved_questions=[],
@@ -384,7 +406,7 @@ class DiagnosisToolGraph:
                     findings=[
                         Finding(
                             claim="User is active (IsActive=True), contradicting LOGIN-3 deactivation",
-                            evidence_refs=[ev_details_id],
+                            evidence_refs=[ev_active_id],
                         )
                     ],
                     unresolved_questions=["User is active. Re-evaluate credentials or SSO configuration."],
@@ -454,6 +476,19 @@ class DiagnosisToolGraph:
                 "MatchDetail": match_detail,
                 "SOPReference": sop_id,
             }
+
+            # On-demand field evidence for LoginURL
+            ev_url_id = f"ev_login_url_{uuid.uuid4().hex[:6]}"
+            ev_url_record = {
+                "evidence_id": ev_url_id,
+                "tool_name": "salesforce_get_user_field",
+                "field_name": "LoginURL",
+                "user_id": user_id,
+                "observed_value": {"IsActive": is_active, "URLSymptomMatched": is_url_issue},
+            }
+            recorded_evidence.append(ev_url_record)
+            new_evidence.append(ev_url_record)
+
             if not is_active:
                 result = DiagnosisResult(
                     status="contradicted",
@@ -466,7 +501,7 @@ class DiagnosisToolGraph:
                     findings=[
                         Finding(
                             claim=f"Target user is inactive in Salesforce, disproving wrong URL hypothesis ({norm_code})",
-                            evidence_refs=[ev_details_id or ev_search_id],
+                            evidence_refs=[ev_url_id],
                         )
                     ],
                     unresolved_questions=["User account is deactivated in Salesforce."],
@@ -484,11 +519,11 @@ class DiagnosisToolGraph:
                     findings=[
                         Finding(
                             claim="Target user account verified active in Salesforce",
-                            evidence_refs=[ev_details_id or ev_search_id],
+                            evidence_refs=[ev_search_id],
                         ),
                         Finding(
                             claim=f"Incident symptoms indicate incorrect login URL per canonical SOP {sop_id}",
-                            evidence_refs=[ev_details_id or ev_search_id],
+                            evidence_refs=[ev_url_id],
                         ),
                     ],
                     unresolved_questions=[],
@@ -506,7 +541,7 @@ class DiagnosisToolGraph:
                     findings=[
                         Finding(
                             claim="Standard org gateway in use, disproving wrong URL hypothesis (LOGIN-2)",
-                            evidence_refs=[ev_details_id or ev_search_id],
+                            evidence_refs=[ev_url_id],
                         )
                     ],
                     unresolved_questions=["Evaluate authentication and identity federation."],
@@ -522,6 +557,19 @@ class DiagnosisToolGraph:
                 "IsActive": is_active,
                 "FederationIdentifier": fed_id,
             }
+
+            # On-demand field evidence for FederationSuspension
+            ev_susp_id = f"ev_susp_{uuid.uuid4().hex[:6]}"
+            ev_susp_record = {
+                "evidence_id": ev_susp_id,
+                "tool_name": "salesforce_get_user_field",
+                "field_name": "FederationSuspension",
+                "user_id": user_id,
+                "observed_value": {"IsActive": is_active, "FederationIdentifier": fed_id},
+            }
+            recorded_evidence.append(ev_susp_record)
+            new_evidence.append(ev_susp_record)
+
             if is_active and fed_id:
                 result = DiagnosisResult(
                     status="contradicted",
@@ -534,7 +582,7 @@ class DiagnosisToolGraph:
                     findings=[
                         Finding(
                             claim=f"User account is active in Salesforce with assigned FederationIdentifier, disproving {norm_code}",
-                            evidence_refs=[ev_details_id],
+                            evidence_refs=[ev_susp_id],
                         )
                     ],
                     unresolved_questions=["User is active with FederationIdentifier."],
@@ -573,6 +621,19 @@ class DiagnosisToolGraph:
                 "MatchDetail": match_detail,
                 "SOPReference": sop_id,
             }
+
+            # On-demand field evidence for MobileSetup
+            ev_mob_id = f"ev_mobile_{uuid.uuid4().hex[:6]}"
+            ev_mob_record = {
+                "evidence_id": ev_mob_id,
+                "tool_name": "salesforce_get_user_field",
+                "field_name": "MobileSetup",
+                "user_id": user_id,
+                "observed_value": {"IsActive": is_active, "ScenarioMatched": is_scenario_matched},
+            }
+            recorded_evidence.append(ev_mob_record)
+            new_evidence.append(ev_mob_record)
+
             if not is_active:
                 result = DiagnosisResult(
                     status="contradicted",
@@ -585,7 +646,7 @@ class DiagnosisToolGraph:
                     findings=[
                         Finding(
                             claim=f"Target user is inactive in Salesforce, disproving mobile-specific client handshake issue ({norm_code})",
-                            evidence_refs=[ev_details_id or ev_search_id],
+                            evidence_refs=[ev_mob_id],
                         )
                     ],
                     unresolved_questions=["User account is deactivated in Salesforce."],
@@ -609,11 +670,11 @@ class DiagnosisToolGraph:
                     findings=[
                         Finding(
                             claim="Target user account is verified active in Salesforce org with valid credentials",
-                            evidence_refs=[ev_details_id or ev_search_id],
+                            evidence_refs=[ev_search_id],
                         ),
                         Finding(
                             claim=f"Incident symptoms match Salesforce Mobile App setup procedure per canonical SOP {sop_id} ('{sop_desc}')",
-                            evidence_refs=[ev_details_id or ev_search_id],
+                            evidence_refs=[ev_mob_id],
                         ),
                     ],
                     unresolved_questions=[],
@@ -631,7 +692,7 @@ class DiagnosisToolGraph:
                     findings=[
                         Finding(
                             claim=f"No mobile application access failure indicated in incident narrative, disproving {norm_code}",
-                            evidence_refs=[ev_details_id or ev_search_id],
+                            evidence_refs=[ev_mob_id],
                         )
                     ],
                     unresolved_questions=[],
@@ -647,6 +708,19 @@ class DiagnosisToolGraph:
                 "IsActive": is_active,
                 "FederationIdentifier": fed_id,
             }
+
+            # On-demand field evidence for FederationSync
+            ev_sync_id = f"ev_sync_{uuid.uuid4().hex[:6]}"
+            ev_sync_record = {
+                "evidence_id": ev_sync_id,
+                "tool_name": "salesforce_get_user_field",
+                "field_name": "FederationSync",
+                "user_id": user_id,
+                "observed_value": {"IsActive": is_active, "FederationIdentifier": fed_id},
+            }
+            recorded_evidence.append(ev_sync_record)
+            new_evidence.append(ev_sync_record)
+
             if not is_active:
                 result = DiagnosisResult(
                     status="contradicted",
@@ -659,7 +733,7 @@ class DiagnosisToolGraph:
                     findings=[
                         Finding(
                             claim=f"Target user is inactive in Salesforce, disproving active external sync failure ({norm_code})",
-                            evidence_refs=[ev_details_id or ev_search_id],
+                            evidence_refs=[ev_sync_id],
                         )
                     ],
                     unresolved_questions=["User is inactive in Salesforce."],
@@ -696,6 +770,19 @@ class DiagnosisToolGraph:
                 "MatchDetail": match_detail,
                 "SOPReference": sop_id,
             }
+
+            # On-demand field evidence for WorkOrderDelivery
+            ev_wo_id = f"ev_workorder_{uuid.uuid4().hex[:6]}"
+            ev_wo_record = {
+                "evidence_id": ev_wo_id,
+                "tool_name": "salesforce_get_user_field",
+                "field_name": "WorkOrderDelivery",
+                "user_id": user_id,
+                "observed_value": {"IsActive": is_active, "WorkOrderSymptomMatched": is_wo_issue},
+            }
+            recorded_evidence.append(ev_wo_record)
+            new_evidence.append(ev_wo_record)
+
             if not is_active:
                 result = DiagnosisResult(
                     status="contradicted",
@@ -708,7 +795,7 @@ class DiagnosisToolGraph:
                     findings=[
                         Finding(
                             claim=f"Target user is inactive in Salesforce, disproving {norm_code} work order close delivery",
-                            evidence_refs=[ev_details_id or ev_search_id],
+                            evidence_refs=[ev_wo_id],
                         )
                     ],
                     unresolved_questions=[],
@@ -726,11 +813,11 @@ class DiagnosisToolGraph:
                     findings=[
                         Finding(
                             claim="Target user account verified active in Salesforce with verified email address",
-                            evidence_refs=[ev_details_id or ev_search_id],
+                            evidence_refs=[ev_search_id],
                         ),
                         Finding(
                             claim=f"Incident symptoms match Field Service work order email closure procedure per canonical SOP {sop_id}",
-                            evidence_refs=[ev_details_id or ev_search_id],
+                            evidence_refs=[ev_wo_id],
                         ),
                     ],
                     unresolved_questions=[],
@@ -748,7 +835,7 @@ class DiagnosisToolGraph:
                     findings=[
                         Finding(
                             claim=f"No work order notification delivery failure indicated in incident, disproving {norm_code}",
-                            evidence_refs=[ev_details_id or ev_search_id],
+                            evidence_refs=[ev_wo_id],
                         )
                     ],
                     unresolved_questions=[],
@@ -1085,7 +1172,7 @@ class DiagnosisToolGraph:
                         findings=[
                             Finding(
                                 claim=f"Incident context does not match SOP {sop_id} scenario scope",
-                                evidence_refs=[ev_details_id or ev_search_id],
+                                evidence_refs=[ev_search_id],
                             )
                         ],
                         unresolved_questions=[],
@@ -1109,4 +1196,4 @@ class DiagnosisToolGraph:
         # Step 4: Validate evidence grounding before returning
         validate_evidence_grounding(result, recorded_evidence)
 
-        return result, recorded_evidence
+        return result, new_evidence

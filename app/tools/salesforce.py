@@ -50,6 +50,28 @@ def salesforce_execute_soql(query: str) -> List[Dict[str, Any]]:
     return salesforce_client.execute_soql(query)
 
 
+def salesforce_get_basic_user(user_id: str) -> Dict[str, Any]:
+    """Retrieve only minimal core identity fields of a Salesforce user (Id, Username, Email, Name, IsActive)."""
+    full_user = salesforce_client.get_user_details(user_id)
+    if not isinstance(full_user, dict) or "error" in full_user:
+        return full_user
+    return {
+        "Id": full_user.get("Id"),
+        "Username": full_user.get("Username"),
+        "Email": full_user.get("Email"),
+        "Name": full_user.get("Name") or f"{full_user.get('FirstName', '')} {full_user.get('LastName', '')}".strip(),
+        "IsActive": full_user.get("IsActive", False),
+    }
+
+
+def salesforce_get_user_field(user_id: str, field_name: str) -> Any:
+    """Retrieve a specific single field from a Salesforce user record on demand."""
+    full_user = salesforce_client.get_user_details(user_id)
+    if not isinstance(full_user, dict) or "error" in full_user:
+        return None
+    return full_user.get(field_name)
+
+
 def salesforce_get_user_details(user_id: str) -> Dict[str, Any]:
     """Retrieve full details of a specific Salesforce user record by Id via MCP."""
     return salesforce_client.get_user_details(user_id)
@@ -146,11 +168,15 @@ try:
     salesforce_compare_user_access_tool = tool(salesforce_compare_user_access)
     salesforce_get_contact_wizard_details_tool = tool(salesforce_get_contact_wizard_details)
     salesforce_update_user_tool = tool(salesforce_update_user)
+    salesforce_get_basic_user_tool = tool(salesforce_get_basic_user)
+    salesforce_get_user_field_tool = tool(salesforce_get_user_field)
 except ImportError:
     salesforce_user_search_tool = salesforce_user_search
     salesforce_execute_sosl_tool = salesforce_execute_sosl
     salesforce_execute_soql_tool = salesforce_execute_soql
     salesforce_get_user_details_tool = salesforce_get_user_details
+    salesforce_get_basic_user_tool = salesforce_get_basic_user
+    salesforce_get_user_field_tool = salesforce_get_user_field
     salesforce_get_object_permissions_tool = salesforce_get_object_permissions
     salesforce_get_record_access_tool = salesforce_get_record_access
     salesforce_get_user_permission_sets_tool = salesforce_get_user_permission_sets
@@ -163,6 +189,8 @@ def get_diagnosis_tools() -> List[Any]:
     """Return strictly READ-ONLY tools permitted during the Diagnosis stage."""
     return [
         salesforce_user_search_tool,
+        salesforce_get_basic_user_tool,
+        salesforce_get_user_field_tool,
         salesforce_execute_sosl_tool,
         salesforce_execute_soql_tool,
         salesforce_get_user_details_tool,

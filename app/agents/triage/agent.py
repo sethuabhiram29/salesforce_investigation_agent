@@ -162,30 +162,42 @@ class TriageAgent:
         if resolved_affected and resolved_affected.get("Id"):
             user_id = resolved_affected["Id"]
             user_obj = salesforce_get_user_details(user_id)
-            ev_id = f"ev_user_details_{uuid.uuid4().hex[:6]}"
+            ev_id = f"ev_user_identity_{uuid.uuid4().hex[:6]}"
+            basic_identity = {
+                "Id": user_obj.get("Id"),
+                "Username": user_obj.get("Username"),
+                "Email": user_obj.get("Email"),
+                "Name": user_obj.get("Name"),
+                "IsActive": user_obj.get("IsActive"),
+            }
             state["evidence"].append({
                 "evidence_id": ev_id,
-                "tool_name": "salesforce_get_user_details",
-                "field_name": "User",
+                "tool_name": "salesforce_user_search",
+                "field_name": "UserIdentity",
                 "user_id": user_id,
-                "observed_value": user_obj,
-                "raw_output": user_obj,
+                "observed_value": basic_identity,
             })
             state["evidence_cache"]["User"] = user_obj
             state["evidence_cache"][f"User:{user_id}"] = user_obj
-            tools_called.append("salesforce_get_user_details")
+            tools_called.append("salesforce_get_basic_user")
 
         if resolved_mirror and resolved_mirror.get("Id"):
             mirror_id = resolved_mirror["Id"]
             mirror_obj = salesforce_get_user_details(mirror_id)
-            ev_mirror_id = f"ev_user_details_mirror_{uuid.uuid4().hex[:6]}"
+            ev_mirror_id = f"ev_mirror_identity_{uuid.uuid4().hex[:6]}"
+            mirror_basic = {
+                "Id": mirror_obj.get("Id"),
+                "Username": mirror_obj.get("Username"),
+                "Email": mirror_obj.get("Email"),
+                "Name": mirror_obj.get("Name"),
+                "IsActive": mirror_obj.get("IsActive"),
+            }
             state["evidence"].append({
                 "evidence_id": ev_mirror_id,
-                "tool_name": "salesforce_get_user_details",
-                "field_name": "User:mirror",
+                "tool_name": "salesforce_user_search",
+                "field_name": "MirrorUserIdentity",
                 "user_id": mirror_id,
-                "observed_value": mirror_obj,
-                "raw_output": mirror_obj,
+                "observed_value": mirror_basic,
             })
             state["evidence_cache"]["User:mirror"] = mirror_obj
             state["evidence_cache"][f"User:{mirror_id}"] = mirror_obj
