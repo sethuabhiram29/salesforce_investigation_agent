@@ -160,7 +160,7 @@ def salesforce_find_peer_mirror_user(target_user: Dict[str, Any]) -> Optional[Di
     if profile_id:
         soql_profile = (
             f"SELECT Id, Username, Email, FirstName, LastName, Name, IsActive, "
-            f"FederationIdentifier, UserType, Profile.Name, UserRoleId "
+            f"FederationIdentifier, UserType, Profile.Name, Profile.UserLicense.Name, ContactId, UserRoleId "
             f"FROM User WHERE IsActive = true AND Id != '{target_id}' AND ProfileId = '{profile_id}' LIMIT 1"
         )
         records = salesforce_client.execute_soql(soql_profile)
@@ -171,7 +171,7 @@ def salesforce_find_peer_mirror_user(target_user: Dict[str, Any]) -> Optional[Di
     # Priority 2: Search active peer with UserType = 'Standard' and non-empty FederationIdentifier
     soql_fed = (
         f"SELECT Id, Username, Email, FirstName, LastName, Name, IsActive, "
-        f"FederationIdentifier, UserType, Profile.Name, UserRoleId "
+        f"FederationIdentifier, UserType, Profile.Name, Profile.UserLicense.Name, ContactId, UserRoleId "
         f"FROM User WHERE IsActive = true AND Id != '{target_id}' AND UserType = 'Standard' "
         f"AND FederationIdentifier != null LIMIT 1"
     )
@@ -183,7 +183,7 @@ def salesforce_find_peer_mirror_user(target_user: Dict[str, Any]) -> Optional[Di
     # Priority 3: Any active standard user in org
     soql_std = (
         f"SELECT Id, Username, Email, FirstName, LastName, Name, IsActive, "
-        f"FederationIdentifier, UserType, Profile.Name, UserRoleId "
+        f"FederationIdentifier, UserType, Profile.Name, Profile.UserLicense.Name, ContactId, UserRoleId "
         f"FROM User WHERE IsActive = true AND Id != '{target_id}' AND UserType = 'Standard' LIMIT 1"
     )
     records = salesforce_client.execute_soql(soql_std)

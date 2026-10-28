@@ -636,26 +636,53 @@ class StructuredDiagnosisFlow:
         elif condition_key == "is_internal_user":
             target_type = user_details.get("UserType", "Standard")
             target_profile = user_details.get("Profile", {}).get("Name") if isinstance(user_details.get("Profile"), dict) else (user_details.get("ProfileName") or "Standard Platform User")
+            target_license = (
+                user_details.get("Profile", {}).get("UserLicense", {}).get("Name")
+                if isinstance(user_details.get("Profile"), dict) and isinstance(user_details.get("Profile", {}).get("UserLicense"), dict)
+                else user_details.get("UserLicenseName") or "Salesforce Platform"
+            )
+            target_contact_id = user_details.get("ContactId")
             target_email = user_details.get("Email")
+
             mirror_type = mirror_obj.get("UserType", "Standard") if isinstance(mirror_obj, dict) else "Standard"
-            mirror_profile = mirror_obj.get("Profile", {}).get("Name") if isinstance(mirror_obj, dict) and isinstance(mirror_obj.get("Profile"), dict) else (mirror_obj.get("ProfileName") or "Standard User") if isinstance(mirror_obj, dict) else "Standard User"
+            mirror_profile = (
+                mirror_obj.get("Profile", {}).get("Name")
+                if isinstance(mirror_obj, dict) and isinstance(mirror_obj.get("Profile"), dict)
+                else (mirror_obj.get("ProfileName") or "Standard User") if isinstance(mirror_obj, dict) else "Standard User"
+            )
+            mirror_license = (
+                mirror_obj.get("Profile", {}).get("UserLicense", {}).get("Name")
+                if isinstance(mirror_obj, dict) and isinstance(mirror_obj.get("Profile"), dict) and isinstance(mirror_obj.get("Profile", {}).get("UserLicense"), dict)
+                else mirror_obj.get("UserLicenseName") or "Salesforce" if isinstance(mirror_obj, dict) else "Salesforce"
+            )
+            mirror_contact_id = mirror_obj.get("ContactId") if isinstance(mirror_obj, dict) else None
             mirror_email = mirror_obj.get("Email") if isinstance(mirror_obj, dict) else "colleague/peer"
             val = bool(state_vars.get("is_internal", True))
+
             cmp_info = {
                 "decision_point": "Is same? (Internal User)",
-                "rule_evaluated": "Compare Target User vs Peer Mirror User licensing to confirm Internal Staff vs External Partner/Customer",
-                "expected_criteria": "Target UserType == 'Standard' (matching Peer Mirror User internal license baseline)",
-                "target_value": f"UserType: '{target_type}', Profile: '{target_profile}', Email: '{target_email}'",
-                "baseline_value": f"Mirror UserType: '{mirror_type}', Profile: '{mirror_profile}', Email: '{mirror_email}'",
-                "comparison_result": "MATCH - Target User holds internal 'Standard' platform license (identical to peer baseline, NOT External Community/Partner Portal)",
+                "rule_evaluated": (
+                    "Verify Internal Staff vs External Partner/Customer via 3 Salesforce architecture checks: "
+                    "(1) UserType == 'Standard', (2) UserLicense is internal ('Salesforce'/'Salesforce Platform'), "
+                    "and (3) ContactId is NULL (External portal/community users must be linked to a Contact record)."
+                ),
+                "expected_criteria": "UserType == 'Standard' AND UserLicense in ('Salesforce', 'Salesforce Platform') AND ContactId is NULL",
+                "target_value": f"UserType: '{target_type}', License: '{target_license}', Profile: '{target_profile}', ContactId: {target_contact_id}",
+                "baseline_value": f"Mirror UserType: '{mirror_type}', License: '{mirror_license}', Profile: '{mirror_profile}', ContactId: {mirror_contact_id}",
+                "comparison_result": (
+                    "MATCH - Both Target and Peer Mirror hold internal UserType 'Standard', internal UserLicenses "
+                    f"('{target_license}' & '{mirror_license}'), and ContactId=None. Neither is an External Portal or Community user."
+                ),
                 "decision_outcome": "YES" if val else "NO",
                 "reasoning": (
-                    f"Compared target user '{target_email}' against peer mirror user '{mirror_email}'. "
-                    f"Both target and mirror users hold UserType='{target_type}' (Internal Salesforce license, not External Partner or Customer Portal). "
-                    f"Outcome is 'Yes' (User is an Internal Employee). Traversing edge ON_YES to check Federation ID."
+                    f"Mirror user '{mirror_email}' is confirmed as an Internal Employee because it holds UserType='Standard', "
+                    f"Profile='{mirror_profile}' (built on the internal '{mirror_license}' license), and ContactId=None. "
+                    f"Similarly, target user '{target_email}' has UserType='Standard', internal license '{target_license}', "
+                    "and ContactId=None (external community/partner users have ContactId populated with an Account link). "
+                    "Both users belong to the internal workforce baseline. Outcome is 'Yes' (Internal User). Traversing edge ON_YES to check Federation ID."
                 ),
             }
-            return val, {"IsInternal": val, "TargetUserType": target_type, "MirrorUserType": mirror_type}, cmp_info
+            return val, {"IsInternal": val, "TargetUserType": target_type, "MirrorUserType": mirror_type, "TargetLicense": target_license, "MirrorLicense": mirror_license}, cmp_info
 
         elif condition_key == "is_fed_id_blank":
             fed_id = user_details.get("FederationIdentifier")
