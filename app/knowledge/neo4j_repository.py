@@ -12,6 +12,7 @@ API:
 from __future__ import annotations
 
 import csv
+import json
 import logging
 import os
 import sys
@@ -31,6 +32,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 CSV_PATH = ROOT / "data" / "investigation.csv"
+FLOWCHART_JSON_PATH = ROOT / "data" / "login_flowchart_graph.json"
 
 
 class Neo4jKnowledgeRepository:
@@ -299,6 +301,128 @@ class Neo4jKnowledgeRepository:
             "skill_status": first["skill_status"],
             "steps": steps,
             "source": "csv_fallback",
+        }
+
+    # ------------------------------------------------------------------
+    # 3. Decision Tree Flowchart Knowledge Graph Traversal API
+    # ------------------------------------------------------------------
+
+    def _load_local_flowchart_graph(self) -> Dict[str, Any]:
+        if not hasattr(self, "_flowchart_cache") or self._flowchart_cache is None:
+            if FLOWCHART_JSON_PATH.exists():
+                try:
+                    with open(FLOWCHART_JSON_PATH, "r", encoding="utf-8") as f:
+                        self._flowchart_cache = json.load(f)
+                except Exception as e:
+                    logger.warning("Error reading %s: %s", FLOWCHART_JSON_PATH, e)
+                    self._flowchart_cache = {"nodes": [], "edges": []}
+            else:
+                self._flowchart_cache = {"nodes": [], "edges": []}
+        return self._flowchart_cache
+
+    def get_flowchart_start_node(self, domain: str = "LOGIN") -> Dict[str, Any]:
+        """Retrieve root starting node of the decision tree from Neo4j (or local graph)."""
+        normalized = domain.strip().upper()
+        if self._is_connected and self.driver:
+            try:
+                with self.driver.session() as session:
+                    res = session.run("""
+                        MATCH (d:Domain {name: $domain})-[:STARTS_AT]->(start:FlowNode)
+                        RETURN properties(start) AS node
+                    """, domain=normalized)
+                    rec = res.single()
+                    if rec and rec["node"]:
+                        node_data = dict(rec["node"])
+                        node_data["source"] = "neo4j"
+                        return node_data
+            except Exception as e:
+                logger.warning("Neo4j error in get_flowchart_start_node: %s. Using local graph store.", e)
+
+        # Fallback to local graph store
+        graph = self._load_local_flowchart_graph()
+        start_id = graph.get("start_node_id", "NODE_TRIAGE_RESULT")
+        node = self.get_flowchart_node(start_id)
+        if node:
+            node["source"] = "local_knowledge_graph"
+            return node
+        return {
+            "id": start_id,
+            "name": "Triage Result Ingestion",
+            "type": "action",
+            "swimlane": "Wrong Login Url",
+            "source": "local_knowledge_graph",
+        }
+
+    def get_flowchart_node(self, node_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve node attributes by ID from Neo4j (or local graph)."""
+        if self._is_connected and self.driver:
+            try:
+                with self.driver.session() as session:
+                    res = session.run("""
+                        MATCH (n:FlowNode {id: $id})
+                        RETURN properties(n) AS node
+                    """, id=node_id)
+                    rec = res.single()
+                    if rec and rec["node"]:
+                        node_dict = dict(rec["node"])
+                        node_dict["source"] = "neo4j"
+                        return node_dict
+            except Exception as e:
+                logger.warning("Neo4j error in get_flowchart_node: %s. Using local graph store.", e)
+
+        # Local fallback
+        graph = self._load_local_flowchart_graph()
+        for n in graph.get("nodes", []):
+            if n.get("id") == node_id:
+                res_node = dict(n)
+                res_node["source"] = "local_knowledge_graph"
+                return res_node
+        return None
+
+    def get_node_transitions(self, node_id: str) -> Dict[str, Optional[str]]:
+        """Retrieve outgoing edges (ON_YES, ON_NO, TRANSITIONS_TO) for a node."""
+        if self._is_connected and self.driver:
+            try:
+                with self.driver.session() as session:
+                    res = session.run("""
+                        MATCH (curr:FlowNode {id: $id})
+                        OPTIONAL MATCH (curr)-[:ON_YES]->(yes:FlowNode)
+                        OPTIONAL MATCH (curr)-[:ON_NO]->(no:FlowNode)
+                        OPTIONAL MATCH (curr)-[:TRANSITIONS_TO]->(nxt:FlowNode)
+                        RETURN yes.id AS yes_target, no.id AS no_target, nxt.id AS next_target
+                    """, id=node_id)
+                    rec = res.single()
+                    if rec:
+                        return {
+                            "yes_target": rec["yes_target"],
+                            "no_target": rec["no_target"],
+                            "next_target": rec["next_target"],
+                            "source": "neo4j",
+                        }
+            except Exception as e:
+                logger.warning("Neo4j error in get_node_transitions: %s. Using local graph store.", e)
+
+        # Local fallback
+        graph = self._load_local_flowchart_graph()
+        yes_target = None
+        no_target = None
+        next_target = None
+
+        for edge in graph.get("edges", []):
+            if edge.get("from") == node_id:
+                e_type = edge.get("type")
+                if e_type == "ON_YES":
+                    yes_target = edge.get("to")
+                elif e_type == "ON_NO":
+                    no_target = edge.get("to")
+                elif e_type == "TRANSITIONS_TO":
+                    next_target = edge.get("to")
+
+        return {
+            "yes_target": yes_target,
+            "no_target": no_target,
+            "next_target": next_target,
+            "source": "local_knowledge_graph",
         }
 
     def close(self) -> None:

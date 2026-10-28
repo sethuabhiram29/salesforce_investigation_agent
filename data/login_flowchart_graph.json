@@ -1,0 +1,363 @@
+{
+  "domain": "LOGIN",
+  "name": "Login Issues Decision Tree Knowledge Graph",
+  "version": "1.0",
+  "start_node_id": "NODE_TRIAGE_RESULT",
+  "nodes": [
+    {
+      "id": "NODE_TRIAGE_RESULT",
+      "name": "Triage Result Ingestion",
+      "swimlane": "Wrong Login Url",
+      "type": "action",
+      "action_type": "ingest_triage",
+      "tool_name": "TriageNarrativeParser",
+      "description": "Ingest ticket parameters, domain, mirror user, and affected user identity from Triage stage"
+    },
+    {
+      "id": "NODE_LOGIN_URL_PROVIDED",
+      "name": "Login URL Provided?",
+      "swimlane": "Wrong Login Url",
+      "type": "decision",
+      "condition_key": "has_login_url",
+      "description": "Check whether the incident narrative contains a specific login URL"
+    },
+    {
+      "id": "NODE_VALIDATE_LOGIN_URL",
+      "name": "Validate Login URL",
+      "swimlane": "Wrong Login Url",
+      "type": "action",
+      "action_type": "validate_url",
+      "tool_name": "salesforce_validate_url",
+      "description": "Validate login URL against approved Salesforce MyDomain patterns"
+    },
+    {
+      "id": "NODE_APPROVED_URL",
+      "name": "Approved URL?",
+      "swimlane": "Wrong Login Url",
+      "type": "decision",
+      "condition_key": "is_approved_url",
+      "description": "Evaluate if the validated URL is an approved corporate MyDomain"
+    },
+    {
+      "id": "NODE_SEARCH_MAIN_ORG",
+      "name": "Search user in main org",
+      "swimlane": "User not found in any org",
+      "type": "action",
+      "action_type": "search_user_main_org",
+      "tool_name": "salesforce_user_search",
+      "description": "Search the primary Salesforce org for the target user identity"
+    },
+    {
+      "id": "NODE_USER_FOUND_MAIN",
+      "name": "Matching User Found in Main Org?",
+      "swimlane": "User not found in any org",
+      "type": "decision",
+      "condition_key": "user_found_in_main_org",
+      "description": "Evaluate if the user record was resolved in the main Salesforce org"
+    },
+    {
+      "id": "NODE_SEARCH_OTHER_ORGS",
+      "name": "Search User in other orgs",
+      "swimlane": "User not found in any org",
+      "type": "action",
+      "action_type": "search_other_orgs",
+      "tool_name": "cross_org_user_search",
+      "description": "Search auxiliary and secondary enterprise Salesforce orgs"
+    },
+    {
+      "id": "NODE_USER_FOUND_OTHER",
+      "name": "Matching User Found in Other Orgs?",
+      "swimlane": "User not found in any org",
+      "type": "decision",
+      "condition_key": "user_found_in_other_orgs",
+      "description": "Evaluate if the user was found in any secondary or regional org"
+    },
+    {
+      "id": "NODE_FETCH_SF_USER",
+      "name": "Fetch salesforce user (Is Active?)",
+      "swimlane": "User Deactivation",
+      "type": "action",
+      "action_type": "check_user_active",
+      "tool_name": "salesforce_get_basic_user",
+      "description": "Inspect the IsActive attribute on the resolved Salesforce user record"
+    },
+    {
+      "id": "NODE_IS_ACTIVE",
+      "name": "Is Active?",
+      "swimlane": "User Deactivation",
+      "type": "decision",
+      "condition_key": "is_user_active",
+      "description": "Check if user IsActive is True or False in Salesforce"
+    },
+    {
+      "id": "NODE_RETRIEVE_DEACT_AUDIT",
+      "name": "Retrieve Deactivation Audit",
+      "swimlane": "User Deactivation",
+      "type": "action",
+      "action_type": "get_deactivation_audit",
+      "tool_name": "salesforce_get_user_field",
+      "description": "Inspect SetupAuditTrail to identify who deactivated the user"
+    },
+    {
+      "id": "NODE_DEACT_ACTOR_DA",
+      "name": "Deactivation actor verified as DA?",
+      "swimlane": "User Deactivation",
+      "type": "decision",
+      "condition_key": "is_deactivated_by_da",
+      "description": "Check if SetupAuditTrail actor was a Delegated Administrator"
+    },
+    {
+      "id": "NODE_FETCH_MIRROR_USER",
+      "name": "Fetch Similar User using mirror user identity",
+      "swimlane": "Federation ID Missing",
+      "type": "action",
+      "action_type": "compare_mirror_user",
+      "tool_name": "salesforce_get_user_details",
+      "description": "Fetch peer mirror user to compare identity attributes"
+    },
+    {
+      "id": "NODE_IS_INTERNAL_USER",
+      "name": "Is same? (Internal User)",
+      "swimlane": "Federation ID Missing",
+      "type": "decision",
+      "condition_key": "is_internal_user",
+      "description": "Determine if user identity is internal corporate employee vs external partner"
+    },
+    {
+      "id": "NODE_FED_ID_BLANK",
+      "name": "Federation ID Blank?",
+      "swimlane": "Federation ID Missing",
+      "type": "decision",
+      "condition_key": "is_fed_id_blank",
+      "description": "Check if Salesforce FederationIdentifier is null, empty or unpopulated"
+    },
+    {
+      "id": "NODE_OKTA_SUSPENDED",
+      "name": "Federation ID/Okta Suspended status?",
+      "swimlane": "Federation ID Suspended",
+      "type": "decision",
+      "condition_key": "is_okta_suspended",
+      "description": "Check if Identity Provider / Okta user status is SUSPENDED or frozen"
+    },
+    {
+      "id": "NODE_AZURE_WORKDAY_MATCH",
+      "name": "Federation ID matches Emp ID? (Workday)",
+      "swimlane": "Azure Synchronization Internal",
+      "type": "decision",
+      "condition_key": "azure_workday_matches",
+      "description": "Verify Salesforce FederationIdentifier matches Workday Employee ID in Azure AD"
+    },
+    {
+      "id": "NODE_MOBILE_LOGIN_CHECK",
+      "name": "Has Description contain 'Mobile Login Issue' Symptom?",
+      "swimlane": "Mobile Login Setup issue",
+      "type": "decision",
+      "condition_key": "has_mobile_symptom",
+      "description": "Check if incident symptoms describe mobile app client configuration"
+    },
+    {
+      "id": "NODE_CIAM_SYNC_MATCH",
+      "name": "Federation ID matches Emp ID? (CIAM)",
+      "swimlane": "CIAM Synchronization External",
+      "type": "decision",
+      "condition_key": "ciam_sync_matches",
+      "description": "Check if external user synthetic identity matches CIAM mapping"
+    },
+    {
+      "id": "NODE_IS_EMAIL_VERIFIED",
+      "name": "Is Email Verified?",
+      "swimlane": "Email Not Verified",
+      "type": "decision",
+      "condition_key": "is_email_verified",
+      "description": "Check if Salesforce User EmailVerified attribute is True"
+    },
+    {
+      "id": "NODE_WO_EMAIL_CHECK",
+      "name": "Has Description contain 'Work Order Email Not Received' Symptom?",
+      "swimlane": "Work Order Email issue",
+      "type": "decision",
+      "condition_key": "has_wo_symptom",
+      "description": "Check if incident symptoms report missing work order notification emails"
+    },
+    {
+      "id": "TERMINAL_LOGIN_2",
+      "name": "Confirmed Wrong Salesforce URL",
+      "swimlane": "Wrong Login Url",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-2",
+      "decision_basis": "User is attempting to authenticate through unapproved or incorrect Salesforce URL.",
+      "expected_criteria": "Login via approved company MyDomain URL",
+      "skill_file": "LOGIN-2-wrong-login-url.md"
+    },
+    {
+      "id": "TERMINAL_LOGIN_1",
+      "name": "Confirmed User not found in any org",
+      "swimlane": "User not found in any org",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-1",
+      "decision_basis": "No account provisioned for user in primary org or any auxiliary Salesforce org.",
+      "expected_criteria": "User account exists in Salesforce",
+      "skill_file": "LOGIN-1-user-account-not-available.md"
+    },
+    {
+      "id": "TERMINAL_LOGIN_1B",
+      "name": "Confirmed User found in another org",
+      "swimlane": "User found in another org",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-1B",
+      "decision_basis": "User account was located in alternate enterprise organization.",
+      "expected_criteria": "User account provisioned in Primary Org",
+      "skill_file": "LOGIN-1-user-account-not-available.md"
+    },
+    {
+      "id": "TERMINAL_LOGIN_3",
+      "name": "Confirmed User Deactivated by DA Admin",
+      "swimlane": "User Deactivation",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-3",
+      "decision_basis": "User account is deactivated in Salesforce (IsActive=False). Audit log verifies deactivation performed by Delegated Administrator.",
+      "expected_criteria": "User.IsActive == True",
+      "skill_file": "LOGIN-3-user-account-deactivated.md"
+    },
+    {
+      "id": "TERMINAL_LOGIN_3_ESCALATE",
+      "name": "If any other deactivation like mulesoft need manual review",
+      "swimlane": "User Deactivation",
+      "type": "terminal",
+      "status": "escalation_required",
+      "issue_code": "LOGIN-3-ESCALATE",
+      "decision_basis": "User account deactivated by automated integration (Mulesoft/Workday) or unknown actor; requires manual review per policy.",
+      "expected_criteria": "Delegated Administrator deactivation",
+      "skill_file": null
+    },
+    {
+      "id": "TERMINAL_LOGIN_4",
+      "name": "Confirmed Federation ID Missing",
+      "swimlane": "Federation ID Missing",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-4",
+      "decision_basis": "User account is active in Salesforce but lacks FederationIdentifier, directly causing SAML SSO failure.",
+      "expected_criteria": "User.IsActive == True AND (User.FederationIdentifier is null or empty)",
+      "skill_file": "LOGIN-4-federation-id-missing.md"
+    },
+    {
+      "id": "TERMINAL_LOGIN_5",
+      "name": "Confirmed Federation ID Suspended",
+      "swimlane": "Federation ID Suspended",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-5",
+      "decision_basis": "User account is active in Salesforce but user identity is suspended or frozen in Okta/Identity Provider.",
+      "expected_criteria": "Active Federation status in Identity Provider",
+      "skill_file": "LOGIN-5-federation-id-suspended.md"
+    },
+    {
+      "id": "TERMINAL_LOGIN_6",
+      "name": "Confirmed Azure Federation ID Synchronization Issue",
+      "swimlane": "Azure Synchronization Internal",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-6",
+      "decision_basis": "Salesforce FederationIdentifier does not match active Employee ID in Azure AD / Workday directory.",
+      "expected_criteria": "FederationIdentifier matches Workday Employee ID in Azure",
+      "skill_file": "LOGIN-6-federation-id-not-synced-azure.md"
+    },
+    {
+      "id": "TERMINAL_LOGIN_7",
+      "name": "Confirmed CIAM synthetic identity mapping issue",
+      "swimlane": "CIAM Synchronization External",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-7",
+      "decision_basis": "External user Federation Identifier does not match external CIAM synthetic identity mapping.",
+      "expected_criteria": "External Federation ID matches CIAM identity mapping",
+      "skill_file": "LOGIN-7-external-user-federation-id-not-synced-ciam.md"
+    },
+    {
+      "id": "TERMINAL_LOGIN_8",
+      "name": "Confirmed Mobile Login Setup Issue",
+      "swimlane": "Mobile Login Setup issue",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-8",
+      "decision_basis": "User account is active and operational; symptoms describe client-side mobile application configuration.",
+      "expected_criteria": "User.IsActive == True AND symptom indicates mobile login configuration",
+      "skill_file": "LOGIN-8-salesforce-mobile-app-login.md"
+    },
+    {
+      "id": "TERMINAL_LOGIN_9",
+      "name": "Confirmed Work Order Email Issue",
+      "swimlane": "Work Order Email issue",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-9",
+      "decision_basis": "Missing email notifications upon work order closure due to email verification settings on Work Order.",
+      "expected_criteria": "Deliverability enabled for Work Order notifications",
+      "skill_file": "LOGIN-9-no-email-on-work-order-close.md"
+    },
+    {
+      "id": "TERMINAL_LOGIN_10",
+      "name": "Confirmed Email not verified",
+      "swimlane": "Email Not Verified",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-10",
+      "decision_basis": "Salesforce User account email address is unverified, blocking portal and SSO login.",
+      "expected_criteria": "User.EmailVerified == True",
+      "skill_file": "LOGIN-10-email-not-verified.md"
+    },
+    {
+      "id": "TERMINAL_OUT_OF_SCOPE",
+      "name": "Out Of Scope",
+      "swimlane": "Out Of Scope",
+      "type": "terminal",
+      "status": "escalation_required",
+      "issue_code": "OUT-OF-SCOPE",
+      "decision_basis": "User verified active with valid credentials, verified email, and valid Federation ID. No canonical login issue matched flowchart criteria. Routing to Tier-2 engineering.",
+      "expected_criteria": "Standard canonical diagnostic pattern",
+      "skill_file": null
+    }
+  ],
+  "edges": [
+    { "from": "NODE_TRIAGE_RESULT", "to": "NODE_LOGIN_URL_PROVIDED", "type": "TRANSITIONS_TO" },
+    { "from": "NODE_LOGIN_URL_PROVIDED", "to": "NODE_VALIDATE_LOGIN_URL", "type": "ON_YES" },
+    { "from": "NODE_LOGIN_URL_PROVIDED", "to": "NODE_SEARCH_MAIN_ORG", "type": "ON_NO" },
+    { "from": "NODE_VALIDATE_LOGIN_URL", "to": "NODE_APPROVED_URL", "type": "TRANSITIONS_TO" },
+    { "from": "NODE_APPROVED_URL", "to": "NODE_SEARCH_MAIN_ORG", "type": "ON_YES" },
+    { "from": "NODE_APPROVED_URL", "to": "TERMINAL_LOGIN_2", "type": "ON_NO" },
+    { "from": "NODE_SEARCH_MAIN_ORG", "to": "NODE_USER_FOUND_MAIN", "type": "TRANSITIONS_TO" },
+    { "from": "NODE_USER_FOUND_MAIN", "to": "NODE_FETCH_SF_USER", "type": "ON_YES" },
+    { "from": "NODE_USER_FOUND_MAIN", "to": "NODE_SEARCH_OTHER_ORGS", "type": "ON_NO" },
+    { "from": "NODE_SEARCH_OTHER_ORGS", "to": "NODE_USER_FOUND_OTHER", "type": "TRANSITIONS_TO" },
+    { "from": "NODE_USER_FOUND_OTHER", "to": "TERMINAL_LOGIN_1B", "type": "ON_YES" },
+    { "from": "NODE_USER_FOUND_OTHER", "to": "TERMINAL_LOGIN_1", "type": "ON_NO" },
+    { "from": "NODE_FETCH_SF_USER", "to": "NODE_IS_ACTIVE", "type": "TRANSITIONS_TO" },
+    { "from": "NODE_IS_ACTIVE", "to": "NODE_FETCH_MIRROR_USER", "type": "ON_YES" },
+    { "from": "NODE_IS_ACTIVE", "to": "NODE_RETRIEVE_DEACT_AUDIT", "type": "ON_NO" },
+    { "from": "NODE_RETRIEVE_DEACT_AUDIT", "to": "NODE_DEACT_ACTOR_DA", "type": "TRANSITIONS_TO" },
+    { "from": "NODE_DEACT_ACTOR_DA", "to": "TERMINAL_LOGIN_3", "type": "ON_YES" },
+    { "from": "NODE_DEACT_ACTOR_DA", "to": "TERMINAL_LOGIN_3_ESCALATE", "type": "ON_NO" },
+    { "from": "NODE_FETCH_MIRROR_USER", "to": "NODE_IS_INTERNAL_USER", "type": "TRANSITIONS_TO" },
+    { "from": "NODE_IS_INTERNAL_USER", "to": "NODE_FED_ID_BLANK", "type": "ON_YES" },
+    { "from": "NODE_IS_INTERNAL_USER", "to": "NODE_CIAM_SYNC_MATCH", "type": "ON_NO" },
+    { "from": "NODE_FED_ID_BLANK", "to": "TERMINAL_LOGIN_4", "type": "ON_YES" },
+    { "from": "NODE_FED_ID_BLANK", "to": "NODE_OKTA_SUSPENDED", "type": "ON_NO" },
+    { "from": "NODE_OKTA_SUSPENDED", "to": "TERMINAL_LOGIN_5", "type": "ON_YES" },
+    { "from": "NODE_OKTA_SUSPENDED", "to": "NODE_AZURE_WORKDAY_MATCH", "type": "ON_NO" },
+    { "from": "NODE_AZURE_WORKDAY_MATCH", "to": "NODE_MOBILE_LOGIN_CHECK", "type": "ON_YES" },
+    { "from": "NODE_AZURE_WORKDAY_MATCH", "to": "TERMINAL_LOGIN_6", "type": "ON_NO" },
+    { "from": "NODE_MOBILE_LOGIN_CHECK", "to": "TERMINAL_LOGIN_8", "type": "ON_YES" },
+    { "from": "NODE_MOBILE_LOGIN_CHECK", "to": "NODE_IS_EMAIL_VERIFIED", "type": "ON_NO" },
+    { "from": "NODE_CIAM_SYNC_MATCH", "to": "NODE_IS_EMAIL_VERIFIED", "type": "ON_YES" },
+    { "from": "NODE_CIAM_SYNC_MATCH", "to": "TERMINAL_LOGIN_7", "type": "ON_NO" },
+    { "from": "NODE_IS_EMAIL_VERIFIED", "to": "TERMINAL_OUT_OF_SCOPE", "type": "ON_YES" },
+    { "from": "NODE_IS_EMAIL_VERIFIED", "to": "NODE_WO_EMAIL_CHECK", "type": "ON_NO" },
+    { "from": "NODE_WO_EMAIL_CHECK", "to": "TERMINAL_LOGIN_9", "type": "ON_YES" },
+    { "from": "NODE_WO_EMAIL_CHECK", "to": "TERMINAL_LOGIN_10", "type": "ON_NO" }
+  ]
+}
