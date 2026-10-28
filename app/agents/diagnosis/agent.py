@@ -129,13 +129,10 @@ class DiagnosisAgent:
         state.setdefault("step_audit_trail", [])
         evidence_cache = state.setdefault("evidence_cache", {})
 
-        historical_ranks = self._rank_candidates_from_history(state, initial_domain)
-        logger.info("DiagnosisAgent extracted historical candidates: %s", historical_ranks)
-
-        # Structured Flow: For LOGIN issues, follow the exact flowchart decision tree
+        # Structured Flow: For LOGIN issues, follow the exact flowchart decision tree knowledge graph
         if initial_domain == "LOGIN":
             structured_flow = StructuredDiagnosisFlow()
-            diagnosis_result, new_evidence = structured_flow.execute(
+            diagnosis_result, new_evidence, traversal_steps = structured_flow.execute(
                 target_identifier=identifier,
                 context=context,
                 existing_evidence=state.get("evidence", []),
@@ -144,38 +141,33 @@ class DiagnosisAgent:
             if new_evidence:
                 state["evidence"].extend(new_evidence)
 
+            # Record every single graph traversal step from the flowchart into step_audit_trail
+            if traversal_steps:
+                state["step_audit_trail"].extend(traversal_steps)
+
             issue_code = diagnosis_result.issue_code
             attempted_issues.append(issue_code)
 
             if diagnosis_result.status == "confirmed":
-                # Print confirmed root cause banner clearly before loading canonical skill
-                rc_banner = (
-                    "\n" + "=" * 80 + "\n"
-                    f"[ROOT CAUSE CONFIRMED via STRUCTURED FLOW]\n"
-                    f"- Confirmed Root Cause: {issue_code}\n"
-                    f"- Issue Domain:         LOGIN\n"
-                    f"- Decision Basis:       {diagnosis_result.decision_basis}\n"
-                    f"- Next Stage:           Advancing to Resolution Planning to load canonical skill file for '{issue_code}'\n"
-                    + "=" * 80 + "\n"
-                )
-                print(rc_banner, flush=True)
-                logger.info(rc_banner)
-
                 state["step_audit_trail"].append({
-                    "stage": "diagnosis",
+                    "stage": "root_cause_confirmation",
                     "step_order": len(state.get("step_audit_trail", [])) + 1,
-                    "step_name": f"Structured Flow: Confirmed Root Cause ({issue_code})",
+                    "step_name": f"Terminal Node Reached: Confirmed Root Cause ({issue_code})",
                     "graph_node_id": f"STRUCTURED_FLOW_CONFIRM_{issue_code.replace('-', '_')}",
                     "graph_node_name": f"Structured Flow Confirmation: {issue_code}",
-                    "movement_direction": f"Advance to Resolution Planning -> Load Canonical Skill for {issue_code}",
-                    "status_reason": f"Flowchart decision tree reached terminal confirmed node: {issue_code}",
+                    "movement_direction": f"Lock Root Cause [{issue_code}] -----> Advance to Resolution Planning",
+                    "status": "confirmed",
+                    "status_reason": f"Flowchart decision tree successfully satisfied all criteria for root cause: {issue_code}",
                     "current_step_details": diagnosis_result.decision_basis,
-                    "next_step": f"Load canonical skill file for {issue_code} and formulate remediation proposal",
+                    "why_step_taken": "All upstream criteria in flowchart satisfied; locking root cause",
+                    "next_step": f"Load canonical resolution skill file for '{issue_code}' in Resolution Planning stage",
+                    "next_step_reason": f"Root cause '{issue_code}' is permanently confirmed. Now loading canonical skill file to formulate remediation proposal.",
                     "skill_file_loaded": None,
-                    "why_loaded": "Skill loaded in Resolution Planning after root cause confirmation.",
+                    "why_loaded": "Skill loaded strictly in Resolution Planning after root cause confirmation per governance rules.",
                     "tool_called": "StructuredDiagnosisFlow",
                     "tools_called": [e.get("tool_name") for e in new_evidence],
                     "tool_result": diagnosis_result.observed_values,
+                    "observed_summary": diagnosis_result.observed_values,
                     "expected_criteria": diagnosis_result.expected_criteria,
                     "observed_values": diagnosis_result.observed_values,
                     "comparison_summary": diagnosis_result.comparison_summary,
@@ -197,33 +189,25 @@ class DiagnosisAgent:
                 })
                 return state
             else:
-                esc_banner = (
-                    "\n" + "=" * 80 + "\n"
-                    f"[STRUCTURED FLOW REACHED ESCALATION]\n"
-                    f"- Issue Code:     {issue_code}\n"
-                    f"- Domain:         LOGIN\n"
-                    f"- Decision Basis: {diagnosis_result.decision_basis}\n"
-                    f"- Next Stage:     Routing incident to Escalation\n"
-                    + "=" * 80 + "\n"
-                )
-                print(esc_banner, flush=True)
-                logger.info(esc_banner)
-
                 state["step_audit_trail"].append({
                     "stage": "diagnosis",
                     "step_order": len(state.get("step_audit_trail", [])) + 1,
-                    "step_name": f"Structured Flow: Escalation Required ({issue_code})",
+                    "step_name": f"Terminal Node Reached: Escalation Required ({issue_code})",
                     "graph_node_id": f"STRUCTURED_FLOW_ESCALATE_{issue_code.replace('-', '_')}",
                     "graph_node_name": f"Structured Flow Escalation: {issue_code}",
-                    "movement_direction": "Advance to Escalation Node",
+                    "movement_direction": "Advance to Orchestrator Escalation Node",
+                    "status": "escalation_required",
                     "status_reason": diagnosis_result.decision_basis,
                     "current_step_details": diagnosis_result.decision_basis,
-                    "next_step": "Route to Tier-2 human support team",
+                    "why_step_taken": "Flowchart reached an escalation boundary node requiring human review",
+                    "next_step": "Route to Tier-2 human support team per escalation policy",
+                    "next_step_reason": "Escalation node reached in flowchart.",
                     "skill_file_loaded": None,
                     "why_loaded": "Escalation node reached in flowchart.",
                     "tool_called": "StructuredDiagnosisFlow",
                     "tools_called": [e.get("tool_name") for e in new_evidence],
                     "tool_result": diagnosis_result.observed_values,
+                    "observed_summary": diagnosis_result.observed_values,
                     "expected_criteria": diagnosis_result.expected_criteria,
                     "observed_values": diagnosis_result.observed_values,
                     "comparison_summary": diagnosis_result.comparison_summary,
@@ -244,6 +228,9 @@ class DiagnosisAgent:
                     },
                 })
                 return state
+
+        historical_ranks = self._rank_candidates_from_history(state, initial_domain)
+        logger.info("DiagnosisAgent extracted historical candidates: %s", historical_ranks)
 
         for domain_idx, domain in enumerate(domains_to_evaluate):
             # Candidates ordering:
