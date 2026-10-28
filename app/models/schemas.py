@@ -67,6 +67,7 @@ class DiagnosisResult(BaseModel):
         "contradicted",
         "ambiguous_identity",
         "escalation_required",
+        "escalated",
     ]
     issue_code: Optional[str] = None
     findings: List[Finding] = Field(default_factory=list)
