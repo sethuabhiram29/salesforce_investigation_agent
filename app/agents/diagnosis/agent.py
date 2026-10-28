@@ -196,6 +196,54 @@ class DiagnosisAgent:
                     },
                 })
                 return state
+            else:
+                esc_banner = (
+                    "\n" + "=" * 80 + "\n"
+                    f"[STRUCTURED FLOW REACHED ESCALATION]\n"
+                    f"• Issue Code:     {issue_code}\n"
+                    f"• Domain:         LOGIN\n"
+                    f"• Decision Basis: {diagnosis_result.decision_basis}\n"
+                    f"• Next Stage:     Routing incident to Escalation\n"
+                    + "=" * 80 + "\n"
+                )
+                print(esc_banner, flush=True)
+                logger.info(esc_banner)
+
+                state["step_audit_trail"].append({
+                    "stage": "diagnosis",
+                    "step_order": len(state.get("step_audit_trail", [])) + 1,
+                    "step_name": f"Structured Flow: Escalation Required ({issue_code})",
+                    "graph_node_id": f"STRUCTURED_FLOW_ESCALATE_{issue_code.replace('-', '_')}",
+                    "graph_node_name": f"Structured Flow Escalation: {issue_code}",
+                    "movement_direction": "Advance to Escalation Node",
+                    "status_reason": diagnosis_result.decision_basis,
+                    "current_step_details": diagnosis_result.decision_basis,
+                    "next_step": "Route to Tier-2 human support team",
+                    "skill_file_loaded": None,
+                    "why_loaded": "Escalation node reached in flowchart.",
+                    "tool_called": "StructuredDiagnosisFlow",
+                    "tools_called": [e.get("tool_name") for e in new_evidence],
+                    "tool_result": diagnosis_result.observed_values,
+                    "expected_criteria": diagnosis_result.expected_criteria,
+                    "observed_values": diagnosis_result.observed_values,
+                    "comparison_summary": diagnosis_result.comparison_summary,
+                    "decision_basis": diagnosis_result.decision_basis,
+                })
+
+                state["diagnosis_result"] = diagnosis_result.dict()
+                state["incident_domain"] = "LOGIN"
+
+                state.setdefault("trace_events", []).append({
+                    "stage": "diagnosis",
+                    "agent_name": "DiagnosisAgent",
+                    "action": f"Escalated incident via Structured Flow ({issue_code})",
+                    "details": {
+                        "status": "escalation_required",
+                        "issue_code": issue_code,
+                        "flowchart": "Login Issues Decision Tree",
+                    },
+                })
+                return state
 
         for domain_idx, domain in enumerate(domains_to_evaluate):
             # Candidates ordering:

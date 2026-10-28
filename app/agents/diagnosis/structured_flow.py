@@ -615,7 +615,7 @@ class StructuredDiagnosisFlow:
         evidence_refs: List[str],
     ) -> DiagnosisResult:
         return DiagnosisResult(
-            status="escalated",
+            status="escalation_required",
             issue_code=issue_code,
             expected_criteria="Standard canonical diagnostic pattern",
             observed_values={},

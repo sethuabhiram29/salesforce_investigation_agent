@@ -194,23 +194,23 @@ def main():
         print("6. Custom: Enter your own incident details")
         choice = input("\nEnter choice [1-6] (default 1): ").strip()
 
-    if choice == "2":
+    if choice in ("2", "INC10002"):
         ticket = servicenow_get_incident("INC10002")
-    elif choice == "3":
+    elif choice in ("3", "INC10003"):
         ticket = {
             "incident_id": "INC10003",
             "short_description": "Salesforce broken",
             "description": "Can't access salesforce at all. Please help.",
             "caller_email": "jane.doe@acme.corp",
         }
-    elif choice == "4":
+    elif choice in ("4", "INC10004"):
         ticket = {
             "incident_id": "INC10004",
             "short_description": "Cannot edit account records",
             "description": "User sarah.connor@acme.corp cannot edit Account records. Works fine for alex.taylor@acme.corp.",
             "caller_email": "sarah.connor@acme.corp",
         }
-    elif choice == "5":
+    elif choice in ("5", "INC10005"):
         ticket = {
             "incident_id": "INC10005",
             "short_description": "Record access denied on Opportunity",
