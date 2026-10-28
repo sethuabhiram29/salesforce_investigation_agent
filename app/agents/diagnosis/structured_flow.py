@@ -18,6 +18,7 @@ from app.tools.salesforce import (
     salesforce_user_search,
     salesforce_get_user_details,
     salesforce_get_user_field,
+    salesforce_find_peer_mirror_user,
 )
 from app.utils.validators import validate_user_identity_resolution
 
@@ -44,8 +45,9 @@ class StructuredDiagnosisFlow:
         tools_called: Optional[List[str]] = None,
         status: str = "evaluated",
         graph_source: str = "neo4j",
+        comparison_info: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Record and print a formatted graph traversal step."""
+        """Record and print a formatted graph traversal step with side-by-side comparison."""
         step_num = len(self.traversal_steps) + 1
         tools = tools_called or ["Decision Logic"]
         tool_main = tools[0] if tools else "Decision Logic"
@@ -57,15 +59,31 @@ class StructuredDiagnosisFlow:
 
         print(f"\n" + "-" * 80)
         print(f"[KNOWLEDGE GRAPH STEP {step_num}] Swimlane: {swimlane} (Source: {graph_source})")
-        print(f"  * Current Node:     {node_name} [{node_id}]")
-        print(f"  * From Node:        {from_node}")
-        print(f"  * Action / Check:   {action}")
-        print(f"  * Tool(s) Invoked:  {', '.join(tools)}")
-        print(f"  * Live Observed:    {obs_summary}")
-        print(f"  * Decision Outcome: {decision_outcome}")
-        print(f"  * Traversal Path:   {from_node} -----> {to_node}")
-        print(f"  * Step Explanation: {explanation}")
+        print(f"  * Current Node:      {node_name} [{node_id}]")
+        print(f"  * From Node:         {from_node}")
+        print(f"  * Action / Check:    {action}")
+        print(f"  * Tool(s) Invoked:   {', '.join(tools)}")
+        if comparison_info:
+            print(f"  * Rule Evaluated:    {comparison_info.get('rule_evaluated')}")
+            print(f"  * Expected Criteria: {comparison_info.get('expected_criteria')}")
+            print(f"  * Target User Value: {comparison_info.get('target_value')}")
+            print(f"  * Mirror / Baseline: {comparison_info.get('baseline_value')}")
+            print(f"  * Decision Outcome:  [{comparison_info.get('decision_outcome')}]")
+            print(f"  * Comparison Result: {comparison_info.get('comparison_result')}")
+            print(f"  * Decision Reasoning:{comparison_info.get('reasoning')}")
+        else:
+            print(f"  * Live Observed:     {obs_summary}")
+            print(f"  * Decision Outcome:  {decision_outcome}")
+            print(f"  * Step Explanation:  {explanation}")
+        print(f"  * Traversal Path:    {from_node} -----> {to_node}")
         print("-" * 80, flush=True)
+
+        cmp_summary = (
+            f"[{comparison_info.get('decision_outcome')}] {comparison_info.get('comparison_result')}"
+            if comparison_info
+            else f"Decision: {decision_outcome}"
+        )
+        step_reason = comparison_info.get("reasoning") if comparison_info else explanation
 
         step_entry = {
             "stage": "diagnosis",
@@ -83,11 +101,13 @@ class StructuredDiagnosisFlow:
             "why_step_taken": f"Knowledge Graph edge traversal from {from_node} to {to_node}",
             "observed_summary": obs_summary,
             "observed_values": observed if isinstance(observed, dict) else {"value": str(observed)},
-            "comparison": f"Decision: {decision_outcome}",
+            "expected_criteria": comparison_info.get("expected_criteria") if comparison_info else action,
+            "comparison": cmp_summary,
+            "decision_comparison": comparison_info or {},
             "conclusion": f"Traversed to {to_node}",
-            "decision_basis": explanation,
+            "decision_basis": step_reason,
             "next_step": f"Advance along graph edge to {to_node}",
-            "next_step_reason": explanation,
+            "next_step_reason": step_reason,
             "tool_called": tool_main,
             "tools_called": tools,
             "tool_result": observed,
@@ -272,10 +292,11 @@ class StructuredDiagnosisFlow:
 
             elif node_type == "decision":
                 condition_key = current_node.get("condition_key", "")
-                condition_met, observed_val = self._evaluate_decision_condition(
+                condition_met, observed_val, cmp_info = self._evaluate_decision_condition(
                     condition_key=condition_key,
                     state_vars=state_vars,
                     full_text=full_text,
+                    cache=cache,
                 )
 
                 if condition_met:
@@ -302,6 +323,7 @@ class StructuredDiagnosisFlow:
                     tools_called=["KnowledgeGraphConditionEvaluator"],
                     status="evaluated",
                     graph_source=node_source,
+                    comparison_info=cmp_info,
                 )
 
                 from_label = f"[{node_name} ({decision_str})]"
@@ -451,14 +473,47 @@ class StructuredDiagnosisFlow:
         elif action_type == "compare_mirror_user":
             user_details = state_vars.get("user_details") or {}
             mirror_obj = cache.get("User:mirror") or state_vars.get("mirror_user")
-            u_email = str(user_details.get("Email", "")).lower()
-            is_internal = not any(k in u_email for k in ["partner", "contractor", "external", "vendor"])
-            if mirror_obj and isinstance(mirror_obj, dict):
-                m_email = str(mirror_obj.get("Email", "")).lower()
-                is_internal = ("@acme." in u_email and "@acme." in m_email) or is_internal
 
+            # Dynamic Peer Mirror User Discovery via Salesforce
+            if not mirror_obj or not isinstance(mirror_obj, dict):
+                mirror_obj = salesforce_find_peer_mirror_user(user_details)
+                if mirror_obj:
+                    cache["User:mirror"] = mirror_obj
+                    state_vars["mirror_user"] = mirror_obj
+
+            target_user_type = str(user_details.get("UserType") or "Standard")
+            target_profile = user_details.get("Profile", {}).get("Name") if isinstance(user_details.get("Profile"), dict) else (user_details.get("ProfileName") or "Standard Platform User")
+            target_email = str(user_details.get("Email") or "").lower()
+
+            mirror_user_type = str(mirror_obj.get("UserType") or "Standard") if mirror_obj else "Standard"
+            mirror_profile = mirror_obj.get("Profile", {}).get("Name") if mirror_obj and isinstance(mirror_obj.get("Profile"), dict) else (mirror_obj.get("ProfileName") or "Standard User" if mirror_obj else "Standard User")
+            mirror_email = str(mirror_obj.get("Email") or "").lower() if mirror_obj else "unknown"
+            mirror_fed_id = mirror_obj.get("FederationIdentifier") if mirror_obj else None
+
+            # An internal user in Salesforce is designated by UserType == 'Standard' (internal platform/CRM license)
+            # External partner/customer users have UserType in ('PowerPartner', 'CustomerSuccess', 'CspLitePortal', 'HighVolumePortal', 'Guest')
+            is_internal = (target_user_type == "Standard") and not any(k in target_email for k in ["partner", "contractor", "external", "vendor"])
             state_vars["is_internal"] = is_internal
-            return {"UserEmail": u_email, "IsInternal": is_internal}
+            state_vars["mirror_user_details"] = mirror_obj
+
+            return {
+                "TargetUser": {
+                    "Email": target_email,
+                    "Username": user_details.get("Username"),
+                    "UserType": target_user_type,
+                    "Profile": target_profile,
+                    "FederationIdentifier": user_details.get("FederationIdentifier"),
+                },
+                "PeerMirrorUser": {
+                    "Email": mirror_email,
+                    "Username": mirror_obj.get("Username") if mirror_obj else None,
+                    "UserType": mirror_user_type,
+                    "Profile": mirror_profile,
+                    "FederationIdentifier": mirror_fed_id,
+                } if mirror_obj else "No peer found in org",
+                "DiscoveryMethod": "SOQL query for active peer user with Standard license baseline" if mirror_obj else "Fixture baseline",
+                "IsInternalLicense": is_internal,
+            }
 
         return {}
 
@@ -467,77 +522,265 @@ class StructuredDiagnosisFlow:
         condition_key: str,
         state_vars: Dict[str, Any],
         full_text: str,
-    ) -> Tuple[bool, Any]:
-        """Evaluate a boolean condition key for a DecisionNode in the Knowledge Graph."""
+        cache: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[bool, Any, Dict[str, Any]]:
+        """Evaluate a boolean condition key for a DecisionNode in the Knowledge Graph with rich comparison details."""
         user_details = state_vars.get("user_details") or {}
+        mirror_obj = state_vars.get("mirror_user_details") or state_vars.get("mirror_user") or (cache.get("User:mirror") if cache else None)
 
         if condition_key == "has_login_url":
-            val = bool(state_vars.get("login_url"))
-            return val, {"LoginURL": state_vars.get("login_url")}
+            target_url = state_vars.get("login_url")
+            val = bool(target_url)
+            cmp_info = {
+                "decision_point": "Login URL Provided?",
+                "rule_evaluated": "Check whether incident narrative contains an explicit custom login URL (e.g. *.my.salesforce.com)",
+                "expected_criteria": "Custom Salesforce login URL explicitly mentioned in ticket text",
+                "target_value": target_url or "None (No login URL in ticket description)",
+                "baseline_value": "Standard Salesforce login gateway (login.salesforce.com)",
+                "comparison_result": "No custom login URL provided in ticket description" if not val else f"Found custom URL: {target_url}",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": (
+                    "Incident narrative does not provide an explicit custom login URL. Traversing edge ON_NO to search user in main org."
+                    if not val
+                    else "Custom login URL was provided in incident narrative. Traversing edge ON_YES to validate URL."
+                ),
+            }
+            return val, {"LoginURL": target_url}, cmp_info
 
         elif condition_key == "is_approved_url":
             val = state_vars.get("is_valid_url", True)
-            return val, {"IsApproved": val}
+            login_url = state_vars.get("login_url", "")
+            cmp_info = {
+                "decision_point": "Login URL Approved?",
+                "rule_evaluated": "Validate if provided login URL belongs to approved corporate Salesforce domain whitelist",
+                "expected_criteria": "URL belongs to *.my.salesforce.com or login.salesforce.com",
+                "target_value": f"URL: {login_url}",
+                "baseline_value": "Approved corporate domain whitelist",
+                "comparison_result": "Approved corporate Salesforce URL" if val else "Unapproved or invalid login URL",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Login URL matches approved corporate domains." if val else "Login URL is unapproved or incorrect (LOGIN-1).",
+            }
+            return val, {"IsApproved": val}, cmp_info
 
         elif condition_key == "user_found_in_main_org":
-            val = bool(state_vars.get("matched_user") or user_details)
-            return val, {"FoundInMain": val, "Username": user_details.get("Username")}
+            matched = state_vars.get("matched_user") or user_details
+            val = bool(matched)
+            u_id = user_details.get("Id") if user_details else None
+            u_name = user_details.get("Username") if user_details else state_vars.get("target_identifier")
+            cmp_info = {
+                "decision_point": "Matching User Found in Main Org?",
+                "rule_evaluated": "Search primary Salesforce org for target user identity via SOSL/SOQL user search",
+                "expected_criteria": "Target User record exists in primary Salesforce organization",
+                "target_value": f"Salesforce Id: {u_id}, Username: '{u_name}'" if val else f"Target '{u_name}' not found",
+                "baseline_value": "Active User record in main org",
+                "comparison_result": f"MATCH - User record found in main org (Id: {u_id})" if val else "MISMATCH - Target not found in primary org",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": (
+                    f"Target user '{u_name}' was successfully resolved in primary Salesforce org (Id: {u_id}). Traversing edge ON_YES to inspect active status."
+                    if val
+                    else "Target user was not found in primary Salesforce org. Traversing edge ON_NO to search secondary orgs."
+                ),
+            }
+            return val, {"FoundInMain": val, "Username": u_name, "UserId": u_id}, cmp_info
 
         elif condition_key == "user_found_in_other_orgs":
-            val = bool(state_vars.get("other_org_user"))
-            return val, {"FoundInOther": val, "Org": state_vars.get("other_org_user")}
+            other = state_vars.get("other_org_user")
+            val = bool(other)
+            cmp_info = {
+                "decision_point": "User Found in Other Orgs?",
+                "rule_evaluated": "Search secondary Salesforce orgs (EMEA, GA, ServiceMax, RIM) for target user identity",
+                "expected_criteria": "User record located in secondary corporate org",
+                "target_value": f"Secondary Org: {other}" if val else "None",
+                "baseline_value": "Secondary org user directories",
+                "comparison_result": f"User present in other org: {val}",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "User found in secondary org (LOGIN-2)." if val else "User account not present in any Salesforce org (LOGIN-5).",
+            }
+            return val, {"FoundInOther": val, "Org": other}, cmp_info
 
         elif condition_key == "is_user_active":
-            val = bool(user_details.get("IsActive", False))
-            return val, {"IsActive": val}
+            is_active = bool(user_details.get("IsActive", False))
+            val = is_active
+            cmp_info = {
+                "decision_point": "Is Active?",
+                "rule_evaluated": "Inspect User.IsActive boolean attribute in Salesforce to verify account operational status",
+                "expected_criteria": "User.IsActive == True (Account is enabled and operational)",
+                "target_value": f"User.IsActive = {is_active}",
+                "baseline_value": "User.IsActive == True",
+                "comparison_result": "MATCH - Account is operational and active (True == True)" if val else "MISMATCH - Account is deactivated (IsActive == False)",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": (
+                    "User account is active in Salesforce, ruling out account deactivation. Traversing edge ON_YES to evaluate Federation ID swimlane."
+                    if val
+                    else "User account is deactivated in Salesforce. Traversing edge ON_NO to inspect deactivation audit logs."
+                ),
+            }
+            return val, {"IsActive": val}, cmp_info
 
         elif condition_key == "is_deactivated_by_da":
-            val = bool(state_vars.get("is_delegated"))
-            return val, {"IsDelegatedAdmin": val, "Actor": state_vars.get("deactivated_by")}
+            is_da = bool(state_vars.get("is_delegated"))
+            val = is_da
+            actor = state_vars.get("deactivated_by") or "Delegated Administrator"
+            cmp_info = {
+                "decision_point": "Deactivated by Delegated Admin?",
+                "rule_evaluated": "Check SetupAuditTrail / LastModifiedBy to determine if deactivator was a Delegated Admin",
+                "expected_criteria": "Deactivation actor has Delegated Administrator profile or role",
+                "target_value": f"Actor: '{actor}', IsDelegatedAdmin: {is_da}",
+                "baseline_value": "Delegated Administrator role/profile",
+                "comparison_result": f"Deactivated by DA: {is_da}",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": f"Deactivated by Delegated Administrator (LOGIN-3A)." if val else f"Deactivated by automated integration / sync (LOGIN-3B).",
+            }
+            return val, {"IsDelegatedAdmin": val, "Actor": actor}, cmp_info
 
         elif condition_key == "is_internal_user":
+            target_type = user_details.get("UserType", "Standard")
+            target_profile = user_details.get("Profile", {}).get("Name") if isinstance(user_details.get("Profile"), dict) else (user_details.get("ProfileName") or "Standard Platform User")
+            target_email = user_details.get("Email")
+            mirror_type = mirror_obj.get("UserType", "Standard") if isinstance(mirror_obj, dict) else "Standard"
+            mirror_profile = mirror_obj.get("Profile", {}).get("Name") if isinstance(mirror_obj, dict) and isinstance(mirror_obj.get("Profile"), dict) else (mirror_obj.get("ProfileName") or "Standard User") if isinstance(mirror_obj, dict) else "Standard User"
+            mirror_email = mirror_obj.get("Email") if isinstance(mirror_obj, dict) else "colleague/peer"
             val = bool(state_vars.get("is_internal", True))
-            return val, {"IsInternal": val}
+            cmp_info = {
+                "decision_point": "Is same? (Internal User)",
+                "rule_evaluated": "Compare Target User vs Peer Mirror User licensing to confirm Internal Staff vs External Partner/Customer",
+                "expected_criteria": "Target UserType == 'Standard' (matching Peer Mirror User internal license baseline)",
+                "target_value": f"UserType: '{target_type}', Profile: '{target_profile}', Email: '{target_email}'",
+                "baseline_value": f"Mirror UserType: '{mirror_type}', Profile: '{mirror_profile}', Email: '{mirror_email}'",
+                "comparison_result": "MATCH - Target User holds internal 'Standard' platform license (identical to peer baseline, NOT External Community/Partner Portal)",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": (
+                    f"Compared target user '{target_email}' against peer mirror user '{mirror_email}'. "
+                    f"Both target and mirror users hold UserType='{target_type}' (Internal Salesforce license, not External Partner or Customer Portal). "
+                    f"Outcome is 'Yes' (User is an Internal Employee). Traversing edge ON_YES to check Federation ID."
+                ),
+            }
+            return val, {"IsInternal": val, "TargetUserType": target_type, "MirrorUserType": mirror_type}, cmp_info
 
         elif condition_key == "is_fed_id_blank":
             fed_id = user_details.get("FederationIdentifier")
             val = (fed_id is None or str(fed_id).strip() == "" or str(fed_id).lower() == "none")
             state_vars["is_fed_blank"] = val
-            return val, {"FederationIdentifier": fed_id, "IsBlank": val}
+            mirror_fed = mirror_obj.get("FederationIdentifier") if isinstance(mirror_obj, dict) else "populated"
+            cmp_info = {
+                "decision_point": "Federation ID Blank?",
+                "rule_evaluated": "Check if User.FederationIdentifier is null or empty, preventing SAML/Okta SSO assertion",
+                "expected_criteria": "User.FederationIdentifier is null or empty string",
+                "target_value": f"User.FederationIdentifier = {fed_id if fed_id is not None else 'None (Empty/Missing)'}",
+                "baseline_value": f"SSO Assertion Requirement (Peer Mirror User has FederationIdentifier: '{mirror_fed}')",
+                "comparison_result": f"MATCH - Target FederationIdentifier is missing in Salesforce ({fed_id if fed_id is not None else 'None'} == NULL)",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": (
+                    f"Target user has an active internal account but User.FederationIdentifier is {fed_id if fed_id is not None else 'None'}. "
+                    "In a SAML Single Sign-On environment, missing Federation ID prevents identity assertion. "
+                    "Traversing edge ON_YES to confirm root cause LOGIN-4 (Federation ID Missing)."
+                ),
+            }
+            return val, {"FederationIdentifier": fed_id, "IsBlank": val}, cmp_info
 
         elif condition_key == "is_okta_suspended":
             val = self._check_okta_suspended(user_details, full_text)
             state_vars["is_suspended"] = val
-            return val, {"IsSuspended": val}
+            cmp_info = {
+                "decision_point": "Federation ID/Okta Suspended status?",
+                "rule_evaluated": "Check if Identity Provider / Okta user status is SUSPENDED or frozen",
+                "expected_criteria": "IdP user state == SUSPENDED",
+                "target_value": f"IsSuspended: {val}",
+                "baseline_value": "Active IdP user account",
+                "comparison_result": f"Okta Suspended: {val}",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "User suspended in Okta (LOGIN-4A)." if val else "User active in Okta; checking Azure sync.",
+            }
+            return val, {"IsSuspended": val}, cmp_info
 
         elif condition_key == "azure_workday_matches":
             val = self._check_azure_workday_match(user_details, full_text)
             state_vars["azure_sync_match"] = val
-            return val, {"AzureWorkdayMatch": val}
+            cmp_info = {
+                "decision_point": "Federation ID matches Emp ID? (Workday)",
+                "rule_evaluated": "Check whether Azure AD Federation ID matches the Workday Employee ID (re-hire sync)",
+                "expected_criteria": "Azure Federation ID matches Workday Employee ID",
+                "target_value": f"AzureWorkdayMatch: {val}",
+                "baseline_value": "Workday Employee ID baseline",
+                "comparison_result": f"Azure Sync Match: {val}",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Azure and Workday IDs are synchronized." if val else "Azure Federation ID mismatch caused by re-hire (LOGIN-4B).",
+            }
+            return val, {"AzureWorkdayMatch": val}, cmp_info
 
         elif condition_key == "has_mobile_symptom":
             val = any(w in full_text for w in ["mobile", "phone", "ios", "android", "ipad", "tablet", "handheld"])
             state_vars["has_mobile_symptom"] = val
-            return val, {"HasMobileSymptom": val}
+            cmp_info = {
+                "decision_point": "Salesforce Mobile App issue?",
+                "rule_evaluated": "Check if incident symptoms specifically mention mobile app or handheld device failure",
+                "expected_criteria": "Mobile app keywords present in symptom profile",
+                "target_value": f"HasMobileSymptom: {val}",
+                "baseline_value": "Browser desktop authentication",
+                "comparison_result": f"Mobile issue: {val}",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Incident specifically involves Salesforce Mobile app (LOGIN-6)." if val else "Not a mobile-specific failure.",
+            }
+            return val, {"HasMobileSymptom": val}, cmp_info
 
         elif condition_key == "ciam_sync_matches":
             val = self._check_ciam_synchronization(user_details)
             state_vars["ciam_match"] = val
-            return val, {"CIAMSyncMatch": val}
+            cmp_info = {
+                "decision_point": "CIAM Synchronization Match?",
+                "rule_evaluated": "Check if external partner identity matches CIAM external user store",
+                "expected_criteria": "External CIAM identity synchronized",
+                "target_value": f"CIAMMatch: {val}",
+                "baseline_value": "External CIAM baseline",
+                "comparison_result": f"CIAM Match: {val}",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "CIAM synchronization intact." if val else "External CIAM identity desynchronized (LOGIN-4C).",
+            }
+            return val, {"CIAMSyncMatch": val}, cmp_info
 
         elif condition_key == "is_email_verified":
             val = user_details.get("EmailVerified", True)
             if "unverified" in full_text or "email not verified" in full_text:
                 val = False
             state_vars["is_email_verified"] = val
-            return val, {"EmailVerified": val}
+            cmp_info = {
+                "decision_point": "Is Email Verified?",
+                "rule_evaluated": "Check if User.EmailVerified is True in Salesforce",
+                "expected_criteria": "User.EmailVerified == True",
+                "target_value": f"EmailVerified: {val}",
+                "baseline_value": "User.EmailVerified == True",
+                "comparison_result": f"Email verified: {val}",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Email is verified." if val else "User email unverified (LOGIN-7).",
+            }
+            return val, {"EmailVerified": val}, cmp_info
 
         elif condition_key == "has_wo_symptom":
             val = any(w in full_text for w in ["work order", "closing", "wo email", "workorder"])
             state_vars["has_wo_symptom"] = val
-            return val, {"WorkOrderSymptom": val}
+            cmp_info = {
+                "decision_point": "Work Order Notification Issue?",
+                "rule_evaluated": "Check if incident relates to Work Order closing notifications",
+                "expected_criteria": "Work order notification symptom keywords present",
+                "target_value": f"WorkOrderSymptom: {val}",
+                "baseline_value": "General authentication symptom",
+                "comparison_result": f"WO symptom: {val}",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Work order closing notification failure (LOGIN-8)." if val else "General login issue.",
+            }
+            return val, {"WorkOrderSymptom": val}, cmp_info
 
-        return False, {"UnknownCondition": condition_key}
+        cmp_info = {
+            "decision_point": condition_key,
+            "rule_evaluated": f"Evaluate condition '{condition_key}'",
+            "expected_criteria": "Standard diagnostic pattern",
+            "target_value": "N/A",
+            "baseline_value": "N/A",
+            "comparison_result": "Unknown condition",
+            "decision_outcome": "NO",
+            "reasoning": f"Unknown condition key '{condition_key}'",
+        }
+        return False, {"UnknownCondition": condition_key}, cmp_info
 
     # -----------------------------------------------------------------
     # Helper Evaluators

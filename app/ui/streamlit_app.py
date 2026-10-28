@@ -586,24 +586,106 @@ if start_btn:
                                     tool_str = ", ".join(item.get("tools_called", [])) if item.get("tools_called") else "salesforce_get_user_details"
                                     tool_res_str = item.get("conclusion", "Evaluated against live evidence")
 
+                                    cmp = item.get("decision_comparison") or {}
+                                    dec_outcome = cmp.get("decision_outcome") or item.get("status_reason", "")
+                                    is_yes = "yes" in str(dec_outcome).lower()
+                                    is_no = "no" in str(dec_outcome).lower()
+                                    if is_yes:
+                                        pill_style = "background-color: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 3px 10px; border-radius: 4px; font-weight: 700; font-size: 0.85rem;"
+                                        pill_text = "✅ DECISION: YES"
+                                    elif is_no:
+                                        pill_style = "background-color: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; padding: 3px 10px; border-radius: 4px; font-weight: 700; font-size: 0.85rem;"
+                                        pill_text = "❌ DECISION: NO"
+                                    elif is_rc:
+                                        pill_style = "background-color: #dcfce7; color: #166534; border: 1px solid #86efac; padding: 3px 10px; border-radius: 4px; font-weight: 700; font-size: 0.85rem;"
+                                        pill_text = "🎯 CONFIRMED ROOT CAUSE"
+                                    else:
+                                        pill_style = "background-color: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; padding: 3px 10px; border-radius: 4px; font-weight: 700; font-size: 0.85rem;"
+                                        pill_text = f"⚡ {item.get('status_reason', 'ACTION COMPLETED')}"
+
+                                    comparison_html = ""
+                                    if cmp:
+                                        dec_color = "#16a34a" if is_yes else "#dc2626"
+                                        comparison_html = f"""
+                                        <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px 14px; margin: 10px 0;">
+                                            <div style="font-weight: 700; color: #1e293b; margin-bottom: 6px; font-size: 0.92rem;">
+                                                ⚖️ Side-by-Side Comparison & Decision Breakdown:
+                                            </div>
+                                            <table style="width: 100%; font-size: 0.87rem; border-collapse: collapse;">
+                                                <tr style="border-bottom: 1px solid #f1f5f9;">
+                                                    <td style="padding: 4px 8px; font-weight: 600; color: #475569; width: 28%;">Rule / Condition:</td>
+                                                    <td style="padding: 4px 8px; color: #0f172a;">{cmp.get('rule_evaluated', 'N/A')}</td>
+                                                </tr>
+                                                <tr style="border-bottom: 1px solid #f1f5f9;">
+                                                    <td style="padding: 4px 8px; font-weight: 600; color: #475569;">Expected Standard:</td>
+                                                    <td style="padding: 4px 8px; color: #0f172a;">{cmp.get('expected_criteria', 'N/A')}</td>
+                                                </tr>
+                                                <tr style="border-bottom: 1px solid #f1f5f9; background: #f8fafc;">
+                                                    <td style="padding: 4px 8px; font-weight: 600; color: #1e40af;">👤 Target User Value:</td>
+                                                    <td style="padding: 4px 8px; font-family: monospace; color: #1e40af; font-weight: 600;">{cmp.get('target_value', 'N/A')}</td>
+                                                </tr>
+                                                <tr style="border-bottom: 1px solid #f1f5f9; background: #fdf4ff;">
+                                                    <td style="padding: 4px 8px; font-weight: 600; color: #7e22ce;">👥 Benchmark / Peer Mirror:</td>
+                                                    <td style="padding: 4px 8px; font-family: monospace; color: #7e22ce;">{cmp.get('baseline_value', 'N/A')}</td>
+                                                </tr>
+                                                <tr style="border-bottom: 1px solid #f1f5f9;">
+                                                    <td style="padding: 4px 8px; font-weight: 600; color: #475569;">Comparison Result:</td>
+                                                    <td style="padding: 4px 8px; font-weight: 700; color: {dec_color};">{cmp.get('comparison_result', 'N/A')}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td style="padding: 4px 8px; font-weight: 600; color: #475569;">Why {cmp.get('decision_outcome', 'Outcome')}:</td>
+                                                    <td style="padding: 4px 8px; color: #334155; line-height: 1.5;">{cmp.get('reasoning', 'N/A')}</td>
+                                                </tr>
+                                            </table>
+                                        </div>
+                                        """
+                                    elif item.get("graph_node_id") == "NODE_FETCH_MIRROR_USER":
+                                        obs_dict = item.get("tool_result") or item.get("observed_values") or {}
+                                        t_u = obs_dict.get("TargetUser", {}) if isinstance(obs_dict, dict) else {}
+                                        p_m = obs_dict.get("PeerMirrorUser", {}) if isinstance(obs_dict, dict) else {}
+                                        comparison_html = f"""
+                                        <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px 14px; margin: 10px 0;">
+                                            <div style="font-weight: 700; color: #1e293b; margin-bottom: 6px; font-size: 0.92rem;">
+                                                👥 Peer Mirror User Discovery & Attribute Baseline:
+                                            </div>
+                                            <table style="width: 100%; font-size: 0.87rem; border-collapse: collapse;">
+                                                <tr style="border-bottom: 1px solid #f1f5f9; background: #f8fafc;">
+                                                    <td style="padding: 4px 8px; font-weight: 600; color: #1e40af; width: 28%;">👤 Target User:</td>
+                                                    <td style="padding: 4px 8px; font-family: monospace; color: #1e40af;">Username: {t_u.get('Username')}, Profile: {t_u.get('Profile')}, UserType: {t_u.get('UserType')}, FedID: {t_u.get('FederationIdentifier')}</td>
+                                                </tr>
+                                                <tr style="border-bottom: 1px solid #f1f5f9; background: #fdf4ff;">
+                                                    <td style="padding: 4px 8px; font-weight: 600; color: #7e22ce;">👥 Discovered Peer Mirror:</td>
+                                                    <td style="padding: 4px 8px; font-family: monospace; color: #7e22ce;">Username: {p_m.get('Username') if isinstance(p_m, dict) else p_m}, Profile: {p_m.get('Profile') if isinstance(p_m, dict) else 'N/A'}, UserType: {p_m.get('UserType') if isinstance(p_m, dict) else 'N/A'}, FedID: {p_m.get('FederationIdentifier') if isinstance(p_m, dict) else 'N/A'}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td style="padding: 4px 8px; font-weight: 600; color: #475569;">Discovery Source:</td>
+                                                    <td style="padding: 4px 8px; color: #334155;">{obs_dict.get('DiscoveryMethod', 'Salesforce SOQL discovery of active peer user with Standard license baseline')}</td>
+                                                </tr>
+                                            </table>
+                                        </div>
+                                        """
+
                                     with st.container():
                                         st.markdown(f"""
                                         <div style="border-left: 4px solid {border_col}; padding: 14px 18px; margin-bottom: 14px; background-color: {bg_col}; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
                                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                                                 <div style="font-weight: 700; font-size: 1.02rem; color: #1e293b;">
-                                                    {item.get('step_name')} <span class="{badge_class}">[{item.get('status', '').upper()}]</span>
+                                                    {item.get('step_name')}
                                                 </div>
-                                                <span style="font-family: monospace; font-size: 0.78rem; background: #e2e8f0; color: #334155; padding: 2px 6px; border-radius: 4px;">
-                                                    Node: {item.get('graph_node_id', 'DAG_NODE')}
-                                                </span>
+                                                <div>
+                                                    <span style="{pill_style}">{pill_text}</span>
+                                                    <span style="font-family: monospace; font-size: 0.78rem; background: #e2e8f0; color: #334155; padding: 2px 6px; border-radius: 4px; margin-left: 6px;">
+                                                        Node: {item.get('graph_node_id', 'DAG_NODE')}
+                                                    </span>
+                                                </div>
                                             </div>
                                             <div style="font-size: 0.90rem; color: #334155; line-height: 1.65;">
                                                 🛠️ <b>Tool Called at this Instance:</b> <code>{tool_str}()</code> (Inspecting live gateway evidence)<br>
                                                 🎯 <b>Why Called at this Specific Instance:</b> {item.get('why_step_taken', item.get('why_loaded'))}<br>
                                                 🔍 <b>What We Did in This Step:</b> {item.get('current_step_details', 'Evaluated candidate against Salesforce evidence.')}<br>
-                                                🔎 <b>Live Salesforce Evidence Inspected:</b> <b>{obs_summary_english}</b><br>
-                                                ⚖️ <b>Expected vs Observed Criteria:</b> {item.get('comparison', item.get('conclusion'))}<br>
-                                                📤 <b>Tool Evaluation Result:</b> <b>{tool_res_str}</b><br>
+                                                {comparison_html}
+                                                🔎 <b>Live Evidence Inspected:</b> <b>{obs_summary_english}</b><br>
+                                                📤 <b>Step Conclusion:</b> <b>{tool_res_str}</b><br>
                                                 💡 <b>Step Decision Basis & Reasoning:</b> {item.get('decision_basis', item.get('status_reason'))}<br>
                                                 🧭 <b>Knowledge Graph Traversal Direction:</b> <span style="color: #7c3aed; font-weight: 600;">{item.get('movement_direction', 'N/A')}</span><br>
                                                 ➡️ <b>Why Moving to Next Step:</b> <span style="color: #0b5cff; font-weight: 600;">{item.get('next_step', item.get('next_step_reason'))}</span>

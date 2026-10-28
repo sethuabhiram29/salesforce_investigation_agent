@@ -147,6 +147,59 @@ def salesforce_compare_user_access(
     return diff
 
 
+def salesforce_find_peer_mirror_user(target_user: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Discover a peer mirror user in Salesforce to benchmark internal status and federation attributes.
+
+    When no mirror user is provided in the incident ticket narrative, this tool finds an active
+    colleague in the same organization sharing similar profile or standard user licensing.
+    """
+    target_id = target_user.get("Id") or ""
+    profile_id = target_user.get("ProfileId")
+
+    # Priority 1: Search active peer in Salesforce with matching Profile
+    if profile_id:
+        soql_profile = (
+            f"SELECT Id, Username, Email, FirstName, LastName, Name, IsActive, "
+            f"FederationIdentifier, UserType, Profile.Name, UserRoleId "
+            f"FROM User WHERE IsActive = true AND Id != '{target_id}' AND ProfileId = '{profile_id}' LIMIT 1"
+        )
+        records = salesforce_client.execute_soql(soql_profile)
+        if records:
+            peer_id = records[0].get("Id")
+            return salesforce_client.get_user_details(peer_id)
+
+    # Priority 2: Search active peer with UserType = 'Standard' and non-empty FederationIdentifier
+    soql_fed = (
+        f"SELECT Id, Username, Email, FirstName, LastName, Name, IsActive, "
+        f"FederationIdentifier, UserType, Profile.Name, UserRoleId "
+        f"FROM User WHERE IsActive = true AND Id != '{target_id}' AND UserType = 'Standard' "
+        f"AND FederationIdentifier != null LIMIT 1"
+    )
+    records = salesforce_client.execute_soql(soql_fed)
+    if records:
+        peer_id = records[0].get("Id")
+        return salesforce_client.get_user_details(peer_id)
+
+    # Priority 3: Any active standard user in org
+    soql_std = (
+        f"SELECT Id, Username, Email, FirstName, LastName, Name, IsActive, "
+        f"FederationIdentifier, UserType, Profile.Name, UserRoleId "
+        f"FROM User WHERE IsActive = true AND Id != '{target_id}' AND UserType = 'Standard' LIMIT 1"
+    )
+    records = salesforce_client.execute_soql(soql_std)
+    if records:
+        peer_id = records[0].get("Id")
+        return salesforce_client.get_user_details(peer_id)
+
+    # Priority 4: Offline / Fixture fallback (Alex Taylor)
+    for u in getattr(salesforce_client, "_working_fixtures", []):
+        if u.get("Id") != target_id and u.get("IsActive"):
+            import copy
+            return copy.deepcopy(u)
+
+    return None
+
+
 def salesforce_update_user(
     user_id: str,
     field_name: str,
@@ -154,6 +207,7 @@ def salesforce_update_user(
 ) -> Dict[str, Any]:
     """Execute an approved write operation to update a user record via MCP or authorized adapter."""
     return salesforce_client.update_user_field(user_id, field_name, new_value)
+
 
 
 try:
@@ -167,6 +221,7 @@ try:
     salesforce_get_user_permission_sets_tool = tool(salesforce_get_user_permission_sets)
     salesforce_compare_user_access_tool = tool(salesforce_compare_user_access)
     salesforce_get_contact_wizard_details_tool = tool(salesforce_get_contact_wizard_details)
+    salesforce_find_peer_mirror_user_tool = tool(salesforce_find_peer_mirror_user)
     salesforce_update_user_tool = tool(salesforce_update_user)
     salesforce_get_basic_user_tool = tool(salesforce_get_basic_user)
     salesforce_get_user_field_tool = tool(salesforce_get_user_field)
@@ -182,6 +237,7 @@ except ImportError:
     salesforce_get_user_permission_sets_tool = salesforce_get_user_permission_sets
     salesforce_compare_user_access_tool = salesforce_compare_user_access
     salesforce_get_contact_wizard_details_tool = salesforce_get_contact_wizard_details
+    salesforce_find_peer_mirror_user_tool = salesforce_find_peer_mirror_user
     salesforce_update_user_tool = salesforce_update_user
 
 
@@ -194,6 +250,7 @@ def get_diagnosis_tools() -> List[Any]:
         salesforce_execute_sosl_tool,
         salesforce_execute_soql_tool,
         salesforce_get_user_details_tool,
+        salesforce_find_peer_mirror_user_tool,
         salesforce_get_object_permissions_tool,
         salesforce_get_record_access_tool,
         salesforce_get_user_permission_sets_tool,
