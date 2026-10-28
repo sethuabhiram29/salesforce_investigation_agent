@@ -63,12 +63,12 @@ class StructuredDiagnosisFlow:
         # SWIMLANE 1: Wrong Login URL
         # -------------------------------------------------------------
         print("\n[FLOW STEP 1: Login URL Evaluation]")
-        print(f"  • Decision: Login URL Provided? -> {'Yes' if login_url else 'No'}")
+        print(f"  - Decision: Login URL Provided? -> {'Yes' if login_url else 'No'}")
 
         if login_url:
             is_valid_url = self._validate_salesforce_url(login_url)
-            print(f"  • Action: Validate Login URL ('{login_url}')")
-            print(f"  • Decision: Approved URL? -> {'Yes' if is_valid_url else 'No'}")
+            print(f"  - Action: Validate Login URL ('{login_url}')")
+            print(f"  - Decision: Approved URL? -> {'Yes' if is_valid_url else 'No'}")
 
             ev_url_id = f"ev_login_url_{uuid.uuid4().hex[:6]}"
             new_ev = {
@@ -116,8 +116,8 @@ class StructuredDiagnosisFlow:
             matched_user = identity_check.get("user") if identity_check.get("status") == "resolved" else None
 
             if not matched_user:
-                print("  • Decision: Matching User Found in Main Org? -> No")
-                print("  • Action: Search User in Other Orgs...")
+                print("  - Decision: Matching User Found in Main Org? -> No")
+                print("  - Action: Search User in Other Orgs...")
                 other_org_user = self._search_other_orgs(target_identifier)
 
                 ev_search_id = f"ev_user_search_{uuid.uuid4().hex[:6]}"
@@ -187,18 +187,18 @@ class StructuredDiagnosisFlow:
 
         user_id = user_details.get("Id", target_identifier)
         is_active = user_details.get("IsActive", False)
-        print("  • Decision: Matching User Found in Main Org? -> Yes")
+        print("  - Decision: Matching User Found in Main Org? -> Yes")
         print(f"    (User ID: {user_id}, Username: {user_details.get('Username')})")
 
         # -------------------------------------------------------------
         # SWIMLANE 4: User Deactivation
         # -------------------------------------------------------------
         print("\n[FLOW STEP 3: User Deactivation Evaluation]")
-        print(f"  • Action: Fetch Salesforce User (IsActive = {is_active})")
-        print(f"  • Decision: Is Active? -> {'Yes' if is_active else 'No'}")
+        print(f"  - Action: Fetch Salesforce User (IsActive = {is_active})")
+        print(f"  - Decision: Is Active? -> {'Yes' if is_active else 'No'}")
 
         if not is_active:
-            print("  • Action: Retrieve Deactivation Audit Trail...")
+            print("  - Action: Retrieve Deactivation Audit Trail...")
             deactivated_by = user_details.get("DeactivatedBy", "")
             is_delegated = (
                 user_details.get("DelegatedAdmin", False)
@@ -220,7 +220,7 @@ class StructuredDiagnosisFlow:
             recorded_evidence.append(new_ev)
             new_evidence.append(new_ev)
 
-            print(f"  • Decision: Deactivation actor verified as DA? -> {'Yes' if is_delegated else 'No'}")
+            print(f"  - Decision: Deactivation actor verified as DA? -> {'Yes' if is_delegated else 'No'}")
             if is_delegated:
                 print("  >> [TERMINAL NODE REACHED] Confirmed: User Deactivated by DA Admin")
                 return (
@@ -257,7 +257,7 @@ class StructuredDiagnosisFlow:
         # SWIMLANE 5: Federation ID Missing & Mirror User Comparison
         # -------------------------------------------------------------
         print("\n[FLOW STEP 4: Mirror User Comparison & Identity Type]")
-        print("  • Action: Fetch Similar User using mirror user identity")
+        print("  - Action: Fetch Similar User using mirror user identity")
         mirror_obj = cache.get("User:mirror")
         if not mirror_obj and mirror_user:
             if isinstance(mirror_user, dict):
@@ -276,8 +276,8 @@ class StructuredDiagnosisFlow:
             m_email = str(mirror_obj.get("Email", "")).lower()
             is_internal = ("@acme." in u_email and "@acme." in m_email) or is_internal
 
-        print(f"  • Action: Compare EmpId and Federation ID of mirror user")
-        print(f"  • Decision: Is same? (Internal User) -> {'Yes' if is_internal else 'No'}")
+        print(f"  - Action: Compare EmpId and Federation ID of mirror user")
+        print(f"  - Decision: Is same? (Internal User) -> {'Yes' if is_internal else 'No'}")
 
         if not is_internal:
             # ---------------------------------------------------------
@@ -285,7 +285,7 @@ class StructuredDiagnosisFlow:
             # ---------------------------------------------------------
             print("\n[FLOW STEP 5B: CIAM External Synchronization]")
             ciam_match = self._check_ciam_synchronization(user_details)
-            print(f"  • Decision: Federation ID matches Emp ID? (CIAM) -> {'Yes' if ciam_match else 'No'}")
+            print(f"  - Decision: Federation ID matches Emp ID? (CIAM) -> {'Yes' if ciam_match else 'No'}")
 
             ev_ciam_id = f"ev_ciam_sync_{uuid.uuid4().hex[:6]}"
             new_ev = {
@@ -321,7 +321,7 @@ class StructuredDiagnosisFlow:
             fed_id = user_details.get("FederationIdentifier")
             is_fed_blank = (fed_id is None or str(fed_id).strip() == "" or str(fed_id).lower() == "none")
 
-            print(f"  • Decision: Federation ID Blank? -> {'Yes' if is_fed_blank else 'No'}")
+            print(f"  - Decision: Federation ID Blank? -> {'Yes' if is_fed_blank else 'No'}")
 
             ev_fed_id = f"ev_fed_id_{uuid.uuid4().hex[:6]}"
             new_ev = {
@@ -360,7 +360,7 @@ class StructuredDiagnosisFlow:
             # ---------------------------------------------------------
             print("\n[FLOW STEP 5: Federation ID / Okta Status]")
             is_suspended = self._check_okta_suspended(user_details, full_text)
-            print(f"  • Decision: Federation ID/Okta Suspended status? -> {'Yes' if is_suspended else 'No'}")
+            print(f"  - Decision: Federation ID/Okta Suspended status? -> {'Yes' if is_suspended else 'No'}")
 
             if is_suspended:
                 ev_susp_id = f"ev_susp_{uuid.uuid4().hex[:6]}"
@@ -395,7 +395,7 @@ class StructuredDiagnosisFlow:
             # ---------------------------------------------------------
             print("\n[FLOW STEP 6: Azure Workday Synchronization]")
             azure_sync_match = self._check_azure_workday_match(user_details, full_text)
-            print(f"  • Decision: Federation ID matches Emp ID? (Workday) -> {'Yes' if azure_sync_match else 'No'}")
+            print(f"  - Decision: Federation ID matches Emp ID? (Workday) -> {'Yes' if azure_sync_match else 'No'}")
 
             if not azure_sync_match:
                 ev_azure_id = f"ev_azure_sync_{uuid.uuid4().hex[:6]}"
@@ -432,7 +432,7 @@ class StructuredDiagnosisFlow:
             has_mobile_symptom = any(
                 w in full_text for w in ["mobile", "phone", "ios", "android", "ipad", "tablet", "handheld"]
             )
-            print(f"  • Decision: Has Description contain 'Mobile Login Issue' Symptom? -> {'Yes' if has_mobile_symptom else 'No'}")
+            print(f"  - Decision: Has Description contain 'Mobile Login Issue' Symptom? -> {'Yes' if has_mobile_symptom else 'No'}")
 
             if has_mobile_symptom:
                 ev_mob_id = f"ev_mob_{uuid.uuid4().hex[:6]}"
@@ -470,13 +470,13 @@ class StructuredDiagnosisFlow:
         if "unverified" in full_text or "email not verified" in full_text:
             is_email_verified = False
 
-        print(f"  • Decision: Is Email Verified? -> {'Yes' if is_email_verified else 'No'}")
+        print(f"  - Decision: Is Email Verified? -> {'Yes' if is_email_verified else 'No'}")
 
         if not is_email_verified:
             has_wo_symptom = any(
                 w in full_text for w in ["work order", "closing", "wo email", "workorder"]
             )
-            print(f"  • Decision: Has Description contain 'Work Order Email Not Received' Symptom? -> {'Yes' if has_wo_symptom else 'No'}")
+            print(f"  - Decision: Has Description contain 'Work Order Email Not Received' Symptom? -> {'Yes' if has_wo_symptom else 'No'}")
 
             if has_wo_symptom:
                 ev_wo_id = f"ev_wo_{uuid.uuid4().hex[:6]}"
@@ -536,7 +536,7 @@ class StructuredDiagnosisFlow:
         # -------------------------------------------------------------
         # SWIMLANE 12: Out Of Scope
         # -------------------------------------------------------------
-        print("\n  >> [TERMINAL NODE REACHED] 🔴 OUT OF SCOPE (Escalating to Tier-2 support)")
+        print("\n  >> [TERMINAL NODE REACHED] [ESCALATE] OUT OF SCOPE (Escalating to Tier-2 support)")
         return (
             self._build_escalation_result(
                 issue_code="OUT-OF-SCOPE",

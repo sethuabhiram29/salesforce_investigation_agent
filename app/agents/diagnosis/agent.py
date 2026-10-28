@@ -152,10 +152,10 @@ class DiagnosisAgent:
                 rc_banner = (
                     "\n" + "=" * 80 + "\n"
                     f"[ROOT CAUSE CONFIRMED via STRUCTURED FLOW]\n"
-                    f"• Confirmed Root Cause: {issue_code}\n"
-                    f"• Issue Domain:         LOGIN\n"
-                    f"• Decision Basis:       {diagnosis_result.decision_basis}\n"
-                    f"• Next Stage:           Advancing to Resolution Planning to load canonical skill file for '{issue_code}'\n"
+                    f"- Confirmed Root Cause: {issue_code}\n"
+                    f"- Issue Domain:         LOGIN\n"
+                    f"- Decision Basis:       {diagnosis_result.decision_basis}\n"
+                    f"- Next Stage:           Advancing to Resolution Planning to load canonical skill file for '{issue_code}'\n"
                     + "=" * 80 + "\n"
                 )
                 print(rc_banner, flush=True)
@@ -200,10 +200,10 @@ class DiagnosisAgent:
                 esc_banner = (
                     "\n" + "=" * 80 + "\n"
                     f"[STRUCTURED FLOW REACHED ESCALATION]\n"
-                    f"• Issue Code:     {issue_code}\n"
-                    f"• Domain:         LOGIN\n"
-                    f"• Decision Basis: {diagnosis_result.decision_basis}\n"
-                    f"• Next Stage:     Routing incident to Escalation\n"
+                    f"- Issue Code:     {issue_code}\n"
+                    f"- Domain:         LOGIN\n"
+                    f"- Decision Basis: {diagnosis_result.decision_basis}\n"
+                    f"- Next Stage:     Routing incident to Escalation\n"
                     + "=" * 80 + "\n"
                 )
                 print(esc_banner, flush=True)
