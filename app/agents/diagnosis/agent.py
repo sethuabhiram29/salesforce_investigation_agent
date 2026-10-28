@@ -13,6 +13,7 @@ Responsibilities:
 import logging
 from typing import Any, Dict, List, Optional
 
+from app.agents.diagnosis.structured_flow import StructuredDiagnosisFlow
 from app.agents.diagnosis.tool_graph import DiagnosisToolGraph
 from app.knowledge.neo4j_repository import neo4j_repository
 from app.knowledge.sop_repository import sop_repository
@@ -130,6 +131,71 @@ class DiagnosisAgent:
 
         historical_ranks = self._rank_candidates_from_history(state, initial_domain)
         logger.info("DiagnosisAgent extracted historical candidates: %s", historical_ranks)
+
+        # Structured Flow: For LOGIN issues, follow the exact flowchart decision tree
+        if initial_domain == "LOGIN":
+            structured_flow = StructuredDiagnosisFlow()
+            diagnosis_result, new_evidence = structured_flow.execute(
+                target_identifier=identifier,
+                context=context,
+                existing_evidence=state.get("evidence", []),
+                evidence_cache=evidence_cache,
+            )
+            if new_evidence:
+                state["evidence"].extend(new_evidence)
+
+            issue_code = diagnosis_result.issue_code
+            attempted_issues.append(issue_code)
+
+            if diagnosis_result.status == "confirmed":
+                # Print confirmed root cause banner clearly before loading canonical skill
+                rc_banner = (
+                    "\n" + "=" * 80 + "\n"
+                    f"[ROOT CAUSE CONFIRMED via STRUCTURED FLOW]\n"
+                    f"• Confirmed Root Cause: {issue_code}\n"
+                    f"• Issue Domain:         LOGIN\n"
+                    f"• Decision Basis:       {diagnosis_result.decision_basis}\n"
+                    f"• Next Stage:           Advancing to Resolution Planning to load canonical skill file for '{issue_code}'\n"
+                    + "=" * 80 + "\n"
+                )
+                print(rc_banner, flush=True)
+                logger.info(rc_banner)
+
+                state["step_audit_trail"].append({
+                    "stage": "diagnosis",
+                    "step_order": len(state.get("step_audit_trail", [])) + 1,
+                    "step_name": f"Structured Flow: Confirmed Root Cause ({issue_code})",
+                    "graph_node_id": f"STRUCTURED_FLOW_CONFIRM_{issue_code.replace('-', '_')}",
+                    "graph_node_name": f"Structured Flow Confirmation: {issue_code}",
+                    "movement_direction": f"Advance to Resolution Planning -> Load Canonical Skill for {issue_code}",
+                    "status_reason": f"Flowchart decision tree reached terminal confirmed node: {issue_code}",
+                    "current_step_details": diagnosis_result.decision_basis,
+                    "next_step": f"Load canonical skill file for {issue_code} and formulate remediation proposal",
+                    "skill_file_loaded": None,
+                    "why_loaded": "Skill loaded in Resolution Planning after root cause confirmation.",
+                    "tool_called": "StructuredDiagnosisFlow",
+                    "tools_called": [e.get("tool_name") for e in new_evidence],
+                    "tool_result": diagnosis_result.observed_values,
+                    "expected_criteria": diagnosis_result.expected_criteria,
+                    "observed_values": diagnosis_result.observed_values,
+                    "comparison_summary": diagnosis_result.comparison_summary,
+                    "decision_basis": diagnosis_result.decision_basis,
+                })
+
+                state["diagnosis_result"] = diagnosis_result.dict()
+                state["incident_domain"] = "LOGIN"
+
+                state.setdefault("trace_events", []).append({
+                    "stage": "diagnosis",
+                    "agent_name": "DiagnosisAgent",
+                    "action": f"Confirmed root cause as {issue_code} via Structured Flow",
+                    "details": {
+                        "status": "confirmed",
+                        "issue_code": issue_code,
+                        "flowchart": "Login Issues Decision Tree",
+                    },
+                })
+                return state
 
         for domain_idx, domain in enumerate(domains_to_evaluate):
             # Candidates ordering:
