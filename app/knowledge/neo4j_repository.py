@@ -333,6 +333,7 @@ class Neo4jKnowledgeRepository:
                     rec = res.single()
                     if rec and rec["node"]:
                         node_data = dict(rec["node"])
+                        node_data["type"] = node_data.get("node_type") or node_data.get("type", "decision")
                         node_data["source"] = "neo4j"
                         return node_data
             except Exception as e:
@@ -365,6 +366,7 @@ class Neo4jKnowledgeRepository:
                     rec = res.single()
                     if rec and rec["node"]:
                         node_dict = dict(rec["node"])
+                        node_dict["type"] = node_dict.get("node_type") or node_dict.get("type", "decision")
                         node_dict["source"] = "neo4j"
                         return node_dict
             except Exception as e:

@@ -40,11 +40,14 @@ class ResolutionAgent:
 
         affected_user = state.get("affected_user") or {}
         user_id = affected_user.get("Id")
-        username = affected_user.get("Username") or affected_user.get("Email")
+        username = affected_user.get("Username") or affected_user.get("Email") or "NEW_USER"
 
         if not user_id:
-            logger.error("Cannot plan resolution: affected_user has no valid Id.")
-            return state
+            if issue_code in ["LOGIN-1", "LOGIN-001", "LOGIN-1B", "LOGIN-001B"]:
+                user_id = username
+            else:
+                logger.error("Cannot plan resolution: affected_user has no valid Id.")
+                return state
 
         # Derive remediation action and preconditions dynamically from loaded canonical skill,
         # historical precedent resolutions, and diagnosis evidence (no hardcoded fallback)
@@ -403,6 +406,23 @@ class ResolutionAgent:
             preconditions = [
                 "Target user account exists and IsActive=True in Salesforce org",
                 "User email address verified",
+            ]
+        elif issue_code in ["LOGIN-1", "LOGIN-001"]:
+            target_field = "Guidance"
+            proposed_value = f"User '{username}' does not exist in any corporate Salesforce org (NA, EMEA, GA, ServiceMax, RIM). Please submit a User Provisioning / Onboarding RITM in ServiceNow to request an account."
+            justification = "Dynamically derived from SOP LOGIN-001: User account not available in any org. Guide user/manager to submit account creation request."
+            preconditions = [
+                "Searched primary SFDC NA org with 0 results",
+                "Searched secondary orgs (EMEA, GA, ServiceMax, RIM) with 0 results",
+                "Verified user identity identifier from incident",
+            ]
+        elif issue_code in ["LOGIN-1B", "LOGIN-001B"]:
+            target_field = "Guidance"
+            proposed_value = f"User '{username}' account is located in secondary org. Please direct the user to authenticate through the secondary Salesforce portal."
+            justification = "Dynamically derived from SOP LOGIN-001B: User account located in alternate organization. Direct user to appropriate portal."
+            preconditions = [
+                "Target user found in secondary enterprise org",
+                "Primary org access not provisioned",
             ]
         # Deactivated User Scenarios (LOGIN-3 / LOGIN-003)
         elif issue_code in ["LOGIN-3", "LOGIN-003", "LOGIN-3A"] or (

@@ -199,7 +199,7 @@ class StructuredDiagnosisFlow:
             step_count += 1
             node_id = current_node.get("id")
             node_name = current_node.get("name", node_id)
-            node_type = current_node.get("type", "decision")
+            node_type = current_node.get("node_type") or current_node.get("type", "decision")
             swimlane = current_node.get("swimlane", "General")
             node_source = current_node.get("source", graph_source)
 
@@ -387,7 +387,7 @@ class StructuredDiagnosisFlow:
             if not user_details:
                 search_results = salesforce_user_search(target)
                 identity_check = validate_user_identity_resolution(search_results)
-                matched_user = identity_check.get("user") if identity_check.get("status") == "resolved" else None
+                matched_user = identity_check.get("user") if identity_check.get("status") in ("resolved", "unique") else None
                 state_vars["matched_user"] = matched_user
 
                 if matched_user:
@@ -412,12 +412,30 @@ class StructuredDiagnosisFlow:
                     }
                     recorded_evidence.append(new_ev)
                     new_evidence.append(new_ev)
+                else:
+                    ev_search_id = f"ev_user_search_{uuid.uuid4().hex[:6]}"
+                    state_vars["ev_search_id"] = ev_search_id
+                    new_ev = {
+                        "evidence_id": ev_search_id,
+                        "tool_name": "salesforce_user_search",
+                        "field_name": "UserLookupMainOrg",
+                        "observed_value": {
+                            "Target": target,
+                            "Found": False,
+                            "Count": 0,
+                            "Org": "NA (Primary Main Org)",
+                        },
+                    }
+                    recorded_evidence.append(new_ev)
+                    new_evidence.append(new_ev)
             else:
                 state_vars["matched_user"] = user_details
 
             return {
                 "Matched": bool(state_vars.get("matched_user")),
                 "User": user_details.get("Username") if user_details else None,
+                "Target": target,
+                "Found": bool(state_vars.get("matched_user")),
             }
 
         elif action_type == "search_other_orgs":
@@ -429,13 +447,17 @@ class StructuredDiagnosisFlow:
             state_vars["ev_search_id"] = ev_search_id
             new_ev = {
                 "evidence_id": ev_search_id,
-                "tool_name": "salesforce_user_search",
-                "field_name": "UserLookup",
-                "observed_value": {"MainOrg": None, "OtherOrgs": other_user},
+                "tool_name": "cross_org_user_search",
+                "field_name": "UserLookupOtherOrgs",
+                "observed_value": {
+                    "Target": target,
+                    "OrgsSearched": ["EMEA", "GA", "ServiceMax", "RIM"],
+                    "OtherOrgsMatch": other_user,
+                },
             }
             recorded_evidence.append(new_ev)
             new_evidence.append(new_ev)
-            return {"OtherOrgs": other_user}
+            return {"OtherOrgs": other_user or "No matching user found across EMEA, GA, ServiceMax, RIM", "Target": target}
 
         elif action_type == "check_user_active":
             user_details = state_vars.get("user_details") or {}
@@ -578,7 +600,7 @@ class StructuredDiagnosisFlow:
                 "reasoning": (
                     f"Target user '{u_name}' was successfully resolved in primary Salesforce org (Id: {u_id}). Traversing edge ON_YES to inspect active status."
                     if val
-                    else "Target user was not found in primary Salesforce org. Traversing edge ON_NO to search secondary orgs."
+                    else f"Target user '{u_name}' was not found in primary Salesforce org. Traversing edge ON_NO to search secondary orgs."
                 ),
             }
             return val, {"FoundInMain": val, "Username": u_name, "UserId": u_id}, cmp_info
@@ -586,15 +608,20 @@ class StructuredDiagnosisFlow:
         elif condition_key == "user_found_in_other_orgs":
             other = state_vars.get("other_org_user")
             val = bool(other)
+            u_name = state_vars.get("target_identifier")
             cmp_info = {
                 "decision_point": "User Found in Other Orgs?",
                 "rule_evaluated": "Search secondary Salesforce orgs (EMEA, GA, ServiceMax, RIM) for target user identity",
                 "expected_criteria": "User record located in secondary corporate org",
-                "target_value": f"Secondary Org: {other}" if val else "None",
+                "target_value": f"Secondary Org: {other.get('OrgName', other) if isinstance(other, dict) else other}" if val else f"Target '{u_name}' not found in EMEA, GA, ServiceMax, or RIM",
                 "baseline_value": "Secondary org user directories",
-                "comparison_result": f"User present in other org: {val}",
+                "comparison_result": f"User present in secondary org: {val}",
                 "decision_outcome": "YES" if val else "NO",
-                "reasoning": "User found in secondary org (LOGIN-2)." if val else "User account not present in any Salesforce org (LOGIN-5).",
+                "reasoning": (
+                    f"Target user found in secondary org ({other}). Traversing edge ON_YES to TERMINAL_LOGIN_1B."
+                    if val
+                    else f"Target user '{u_name}' is not present in any enterprise Salesforce org. Traversing edge ON_NO to TERMINAL_LOGIN_1."
+                ),
             }
             return val, {"FoundInOther": val, "Org": other}, cmp_info
 

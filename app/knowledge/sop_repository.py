@@ -33,6 +33,8 @@ def normalize_issue_code(code: str) -> str:
     # Specific normalization: Unify delegated admin deactivation (LOGIN-3A) into canonical LOGIN-3
     if code_clean in ["LOGIN-3A", "LOGIN-003A"]:
         return "LOGIN-3"
+    if code_clean in ["LOGIN-1B", "LOGIN-001B"]:
+        return "LOGIN-1"
 
     # Pattern for DOMAIN-00X(A)
     m = re.match(r"^([A-Z]+)-0*(\d+)([A-Z]*)$", code_clean)

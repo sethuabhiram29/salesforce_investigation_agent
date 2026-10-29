@@ -96,12 +96,12 @@ def node_escalation(state: InvestigationState) -> InvestigationState:
 # --- Conditional Routing Functions ---
 
 def route_after_triage(state: InvestigationState) -> Literal["diagnosis", "escalation"]:
-    # Never abort or escalate prematurely simply because a ticket has a general description ('cannot access salesforce')
-    # Route directly to diagnosis as long as we have a target user or caller to investigate!
-    affected = state.get("affected_user") or {}
-    if affected.get("resolution_status") == "not_found":
-        return "escalation"
+    # Never abort or escalate prematurely simply because a user was not found during triage!
+    # The Knowledge Graph contains a dedicated swimlane for 'User not found in any org'
+    # (NODE_SEARCH_MAIN_ORG -> NODE_USER_FOUND_MAIN -> NODE_SEARCH_OTHER_ORGS -> NODE_USER_FOUND_OTHER -> TERMINAL_LOGIN_1).
+    # Route directly to diagnosis so the Diagnosis Agent can traverse the Knowledge Graph!
     return "diagnosis"
+
 
 
 def route_after_diagnosis(state: InvestigationState) -> Literal["resolution_planning", "escalation"]:
