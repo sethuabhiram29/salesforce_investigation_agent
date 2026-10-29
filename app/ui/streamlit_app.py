@@ -387,15 +387,6 @@ with st.expander("📚 **Knowledge Base Canonical SOPs (`data/sop_scenarios_sele
     st.dataframe(sop_table_rows, use_container_width=True)
     st.caption("📖 *All 19 SOPs are dynamically loaded directly from `data/sop_scenarios_selected_sheets.xlsx`. When evaluating candidates, the diagnosis agent strictly exhausts all SOPs in the identified domain before transitioning across domains.*")
 
-# --- KNOWLEDGE GRAPH TREE IMAGE (ALL NODES & RELATIONS) ---
-kg_img_path = ROOT / "app" / "ui" / "assets" / "knowledge_graph_tree.png"
-if not kg_img_path.exists():
-    from app.utils.generate_kg_image import create_knowledge_graph_image
-    create_knowledge_graph_image()
-
-if kg_img_path.exists():
-    st.image(str(kg_img_path), caption="🕸️ Neo4j Knowledge Graph: All Domains, Scenarios, Nodes & Lifecycle Relations Tree", use_container_width=True)
-
 # --- INCIDENT INPUT FORM ---
 with st.expander("📝 **ServiceNow Incident Intake Form**", expanded=True):
     col1, col2, col3 = st.columns([1.5, 2, 2])
@@ -937,7 +928,6 @@ if start_btn:
                         st.markdown(f"**Reason**: {sn.get('reason')}")
                     step_counter += 1
 
-    st.balloons()
     st.success("🎉 **Investigation Completed Successfully!** All agents collaborated and updated state.")
 
     # Render dynamic Knowledge Graph Traversal Map
@@ -963,9 +953,6 @@ with st.expander("🕸️ **Neo4j Knowledge Graph & Scenario Topology Explorer**
     Explore the canonical investigation DAGs stored in **Neo4j** (or local structured graph).
     Each scenario defines the exact dependencies, required tools, evidence checks, and human approval gates.
     """)
-
-    if kg_img_path.exists():
-        st.image(str(kg_img_path), caption="🕸️ Complete Neo4j Knowledge Graph Architecture & Scenario Tree", use_container_width=True)
 
     sel_col1, sel_col2 = st.columns([1, 2])
     with sel_col1:
