@@ -671,15 +671,8 @@ if start_btn:
                                                 </div>
                                             </div>
                                             <div style="font-size: 0.90rem; color: #334155; line-height: 1.65;">
-                                                🛠️ <b>Tool Called at this Instance:</b> <code>{tool_str}()</code> (Inspecting live gateway evidence)<br>
-                                                🎯 <b>Why Called at this Specific Instance:</b> {item.get('why_step_taken', item.get('why_loaded'))}<br>
-                                                🔍 <b>What We Did in This Step:</b> {item.get('current_step_details', 'Evaluated candidate against Salesforce evidence.')}<br>
-                                                {comparison_html}
-                                                🔎 <b>Live Evidence Inspected:</b> <b>{obs_summary_english}</b><br>
-                                                📤 <b>Step Conclusion:</b> <b>{tool_res_str}</b><br>
-                                                💡 <b>Step Decision Basis & Reasoning:</b> {item.get('decision_basis', item.get('status_reason'))}<br>
-                                                🧭 <b>Knowledge Graph Traversal Direction:</b> <span style="color: #7c3aed; font-weight: 600;">{item.get('movement_direction', 'N/A')}</span><br>
-                                                ➡️ <b>Why Moving to Next Step:</b> <span style="color: #0b5cff; font-weight: 600;">{item.get('next_step', item.get('next_step_reason'))}</span>
+                                                🛠️ <b>Tool Called:</b> <code>{tool_str}()</code> &nbsp;|&nbsp; 🧭 <b>Traversal:</b> <span style="color: #7c3aed; font-weight: 600;">{item.get('movement_direction', 'N/A')}</span><br>
+                                                {comparison_html if comparison_html else f"🔍 <b>Details:</b> {item.get('current_step_details', 'N/A')}<br>💡 <b>Outcome:</b> {item.get('status_reason', 'N/A')}"}
                                             </div>
                                         </div>
                                         """, unsafe_allow_html=True)
