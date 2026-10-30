@@ -111,13 +111,22 @@
       "name": "Fetch Similar User using mirror user identity",
       "swimlane": "Federation ID Missing",
       "type": "action",
-      "action_type": "compare_mirror_user",
+      "action_type": "fetch_mirror_user",
       "tool_name": "salesforce_get_user_details",
-      "description": "Fetch peer mirror user to compare identity attributes"
+      "description": "Fetch peer mirror user to establish identity comparison baseline"
+    },
+    {
+      "id": "NODE_COMPARE_EMP_FED_ID",
+      "name": "Compare EmpId and Federation Id of mirror user",
+      "swimlane": "Federation ID Missing",
+      "type": "action",
+      "action_type": "compare_emp_fed_id",
+      "tool_name": "salesforce_get_user_details",
+      "description": "Compare Employee ID, license type, and Federation ID against peer mirror user benchmark"
     },
     {
       "id": "NODE_IS_INTERNAL_USER",
-      "name": "Is same? (Internal User)",
+      "name": "Is same? (Internal)",
       "swimlane": "Federation ID Missing",
       "type": "decision",
       "condition_key": "is_internal_user",
@@ -133,7 +142,7 @@
     },
     {
       "id": "NODE_OKTA_SUSPENDED",
-      "name": "Federation ID/Okta Suspended status?",
+      "name": "Federation ID has Suspended value?",
       "swimlane": "Federation ID Suspended",
       "type": "decision",
       "condition_key": "is_okta_suspended",
@@ -225,7 +234,7 @@
     },
     {
       "id": "TERMINAL_LOGIN_3_ESCALATE",
-      "name": "If any other deactivation like mulesoft need manual review",
+      "name": "If any other deactivation like mulesoft need human review",
       "swimlane": "User Deactivation",
       "type": "terminal",
       "status": "escalation_required",
@@ -342,7 +351,8 @@
     { "from": "NODE_RETRIEVE_DEACT_AUDIT", "to": "NODE_DEACT_ACTOR_DA", "type": "TRANSITIONS_TO" },
     { "from": "NODE_DEACT_ACTOR_DA", "to": "TERMINAL_LOGIN_3", "type": "ON_YES" },
     { "from": "NODE_DEACT_ACTOR_DA", "to": "TERMINAL_LOGIN_3_ESCALATE", "type": "ON_NO" },
-    { "from": "NODE_FETCH_MIRROR_USER", "to": "NODE_IS_INTERNAL_USER", "type": "TRANSITIONS_TO" },
+    { "from": "NODE_FETCH_MIRROR_USER", "to": "NODE_COMPARE_EMP_FED_ID", "type": "TRANSITIONS_TO" },
+    { "from": "NODE_COMPARE_EMP_FED_ID", "to": "NODE_IS_INTERNAL_USER", "type": "TRANSITIONS_TO" },
     { "from": "NODE_IS_INTERNAL_USER", "to": "NODE_FED_ID_BLANK", "type": "ON_YES" },
     { "from": "NODE_IS_INTERNAL_USER", "to": "NODE_CIAM_SYNC_MATCH", "type": "ON_NO" },
     { "from": "NODE_FED_ID_BLANK", "to": "TERMINAL_LOGIN_4", "type": "ON_YES" },
@@ -352,7 +362,7 @@
     { "from": "NODE_AZURE_WORKDAY_MATCH", "to": "NODE_MOBILE_LOGIN_CHECK", "type": "ON_YES" },
     { "from": "NODE_AZURE_WORKDAY_MATCH", "to": "TERMINAL_LOGIN_6", "type": "ON_NO" },
     { "from": "NODE_MOBILE_LOGIN_CHECK", "to": "TERMINAL_LOGIN_8", "type": "ON_YES" },
-    { "from": "NODE_MOBILE_LOGIN_CHECK", "to": "NODE_IS_EMAIL_VERIFIED", "type": "ON_NO" },
+    { "from": "NODE_MOBILE_LOGIN_CHECK", "to": "TERMINAL_OUT_OF_SCOPE", "type": "ON_NO" },
     { "from": "NODE_CIAM_SYNC_MATCH", "to": "NODE_IS_EMAIL_VERIFIED", "type": "ON_YES" },
     { "from": "NODE_CIAM_SYNC_MATCH", "to": "TERMINAL_LOGIN_7", "type": "ON_NO" },
     { "from": "NODE_IS_EMAIL_VERIFIED", "to": "TERMINAL_OUT_OF_SCOPE", "type": "ON_YES" },

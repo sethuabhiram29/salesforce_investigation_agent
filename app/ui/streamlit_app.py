@@ -630,31 +630,50 @@ if start_btn:
                                             </table>
                                         </div>
                                         """
-                                    elif item.get("graph_node_id") == "NODE_FETCH_MIRROR_USER":
+                                    elif item.get("graph_node_id") in ["NODE_FETCH_MIRROR_USER", "NODE_COMPARE_EMP_FED_ID"]:
                                         obs_dict = item.get("tool_result") or item.get("observed_values") or {}
                                         t_u = obs_dict.get("TargetUser", {}) if isinstance(obs_dict, dict) else {}
                                         p_m = obs_dict.get("PeerMirrorUser", {}) if isinstance(obs_dict, dict) else {}
-                                        comparison_html = f"""
-                                        <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px 14px; margin: 10px 0;">
-                                            <div style="font-weight: 700; color: #1e293b; margin-bottom: 6px; font-size: 0.92rem;">
-                                                👥 Peer Mirror User Discovery & Attribute Baseline:
+                                        if t_u or isinstance(p_m, dict):
+                                            comparison_html = f"""
+                                            <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px 14px; margin: 10px 0;">
+                                                <div style="font-weight: 700; color: #1e293b; margin-bottom: 6px; font-size: 0.92rem;">
+                                                    👥 Peer Mirror User Attribute Baseline Comparison:
+                                                </div>
+                                                <table style="width: 100%; font-size: 0.87rem; border-collapse: collapse;">
+                                                    <tr style="border-bottom: 1px solid #f1f5f9; background: #f8fafc;">
+                                                        <td style="padding: 4px 8px; font-weight: 600; color: #1e40af; width: 28%;">👤 Target User:</td>
+                                                        <td style="padding: 4px 8px; font-family: monospace; color: #1e40af;">Username: {t_u.get('Username')}, Profile: {t_u.get('Profile')}, UserType: {t_u.get('UserType')}, FedID: {t_u.get('FederationIdentifier')}</td>
+                                                    </tr>
+                                                    <tr style="border-bottom: 1px solid #f1f5f9; background: #fdf4ff;">
+                                                        <td style="padding: 4px 8px; font-weight: 600; color: #7e22ce;">👥 Discovered Peer Mirror:</td>
+                                                        <td style="padding: 4px 8px; font-family: monospace; color: #7e22ce;">Username: {p_m.get('Username') if isinstance(p_m, dict) else p_m}, Profile: {p_m.get('Profile') if isinstance(p_m, dict) else 'N/A'}, UserType: {p_m.get('UserType') if isinstance(p_m, dict) else 'N/A'}, FedID: {p_m.get('FederationIdentifier') if isinstance(p_m, dict) else 'N/A'}</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td style="padding: 4px 8px; font-weight: 600; color: #475569;">Discovery Source:</td>
+                                                        <td style="padding: 4px 8px; color: #334155;">{obs_dict.get('DiscoveryMethod', 'Salesforce SOQL discovery of active peer user with Standard license baseline')}</td>
+                                                    </tr>
+                                                </table>
                                             </div>
-                                            <table style="width: 100%; font-size: 0.87rem; border-collapse: collapse;">
-                                                <tr style="border-bottom: 1px solid #f1f5f9; background: #f8fafc;">
-                                                    <td style="padding: 4px 8px; font-weight: 600; color: #1e40af; width: 28%;">👤 Target User:</td>
-                                                    <td style="padding: 4px 8px; font-family: monospace; color: #1e40af;">Username: {t_u.get('Username')}, Profile: {t_u.get('Profile')}, UserType: {t_u.get('UserType')}, FedID: {t_u.get('FederationIdentifier')}</td>
-                                                </tr>
-                                                <tr style="border-bottom: 1px solid #f1f5f9; background: #fdf4ff;">
-                                                    <td style="padding: 4px 8px; font-weight: 600; color: #7e22ce;">👥 Discovered Peer Mirror:</td>
-                                                    <td style="padding: 4px 8px; font-family: monospace; color: #7e22ce;">Username: {p_m.get('Username') if isinstance(p_m, dict) else p_m}, Profile: {p_m.get('Profile') if isinstance(p_m, dict) else 'N/A'}, UserType: {p_m.get('UserType') if isinstance(p_m, dict) else 'N/A'}, FedID: {p_m.get('FederationIdentifier') if isinstance(p_m, dict) else 'N/A'}</td>
-                                                </tr>
-                                                <tr>
-                                                    <td style="padding: 4px 8px; font-weight: 600; color: #475569;">Discovery Source:</td>
-                                                    <td style="padding: 4px 8px; color: #334155;">{obs_dict.get('DiscoveryMethod', 'Salesforce SOQL discovery of active peer user with Standard license baseline')}</td>
-                                                </tr>
-                                            </table>
-                                        </div>
-                                        """
+                                            """
+                                        else:
+                                            comparison_html = f"""
+                                            <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px 14px; margin: 10px 0;">
+                                                <div style="font-weight: 700; color: #1e293b; margin-bottom: 6px; font-size: 0.92rem;">
+                                                    👥 Discovered Comparative Peer Mirror User:
+                                                </div>
+                                                <table style="width: 100%; font-size: 0.87rem; border-collapse: collapse;">
+                                                    <tr style="border-bottom: 1px solid #f1f5f9; background: #fdf4ff;">
+                                                        <td style="padding: 4px 8px; font-weight: 600; color: #7e22ce; width: 28%;">Peer Mirror User:</td>
+                                                        <td style="padding: 4px 8px; font-family: monospace; color: #7e22ce;">{obs_dict.get('PeerMirrorUser', 'None')} (UserType: {obs_dict.get('PeerUserType', 'Standard')})</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td style="padding: 4px 8px; font-weight: 600; color: #475569;">Discovery Source:</td>
+                                                        <td style="padding: 4px 8px; color: #334155;">{obs_dict.get('DiscoveryMethod', 'Salesforce SOQL discovery of active peer user with Standard license baseline')}</td>
+                                                    </tr>
+                                                </table>
+                                            </div>
+                                            """
 
                                     with st.container():
                                         st.markdown(f"""

@@ -492,16 +492,37 @@ class StructuredDiagnosisFlow:
             new_evidence.append(new_ev)
             return {"IsActive": False, "Actor": deactivated_by or "Delegated Administrator", "IsDelegatedAdmin": is_delegated}
 
-        elif action_type == "compare_mirror_user":
+        elif action_type == "fetch_mirror_user":
             user_details = state_vars.get("user_details") or {}
             mirror_obj = cache.get("User:mirror") or state_vars.get("mirror_user")
 
-            # Dynamic Peer Mirror User Discovery via Salesforce
             if not mirror_obj or not isinstance(mirror_obj, dict):
                 mirror_obj = salesforce_find_peer_mirror_user(user_details)
                 if mirror_obj:
                     cache["User:mirror"] = mirror_obj
                     state_vars["mirror_user"] = mirror_obj
+
+            state_vars["mirror_user_details"] = mirror_obj
+            mirror_email = mirror_obj.get("Email") if isinstance(mirror_obj, dict) else (mirror_obj or "None")
+            mirror_user_type = mirror_obj.get("UserType") if isinstance(mirror_obj, dict) else "Standard"
+
+            return {
+                "PeerMirrorUser": mirror_email,
+                "PeerUserType": mirror_user_type,
+                "DiscoveryMethod": "SOQL active peer lookup with matching standard license",
+            }
+
+        elif action_type in ["compare_emp_fed_id", "compare_mirror_user"]:
+            user_details = state_vars.get("user_details") or {}
+            mirror_obj = state_vars.get("mirror_user_details") or cache.get("User:mirror") or state_vars.get("mirror_user")
+
+            # Dynamic Peer Mirror User Discovery via Salesforce if not already discovered
+            if not mirror_obj or not isinstance(mirror_obj, dict):
+                mirror_obj = salesforce_find_peer_mirror_user(user_details)
+                if mirror_obj:
+                    cache["User:mirror"] = mirror_obj
+                    state_vars["mirror_user"] = mirror_obj
+                    state_vars["mirror_user_details"] = mirror_obj
 
             target_user_type = str(user_details.get("UserType") or "Standard")
             target_profile = user_details.get("Profile", {}).get("Name") if isinstance(user_details.get("Profile"), dict) else (user_details.get("ProfileName") or "Standard Platform User")

@@ -87,6 +87,10 @@ def ingest_flowchart_into_neo4j(
         domain_name = graph_data.get("domain", "LOGIN")
         session.run("MERGE (d:Domain {name: $domain})", domain=domain_name)
 
+        # 2b. Clean existing FlowNode nodes and edges to avoid stale connections
+        logger.info("Purging old FlowNode nodes and edges for fresh graph ingestion...")
+        session.run("MATCH (n:FlowNode) DETACH DELETE n")
+
         # 3. Merge Nodes
         nodes = graph_data.get("nodes", [])
         logger.info("Ingesting %d Flowchart Nodes into Neo4j...", len(nodes))
