@@ -82,7 +82,45 @@ Support tickets are written by humans using diverse narrative styles. The agent 
 
 ---
 
-# 3. Ambiguity & Clarification Handling
+# 3. Dynamic Login URL & Endpoint Extraction
+
+In enterprise Salesforce architectures, login entry points differ depending on whether the user is authenticating against production, a custom MyDomain URL, a developer/UAT sandbox, or a partner community. 
+
+The Knowledge Graph decision tree anchors on the **Login URL** in Swimlane 1 ("Wrong Login Url") as part of the initial Prompt Result:
+
+```
+[Prompt Result]
+  - Affected User
+  - Problem / Details
+  - Mirror User
+  - Login URL
+       │
+       ▼
+[Login URL Provided?] ───(Yes)───► [Validate Login URL] ───(Approved URL?)
+       │                                                         │
+      (No)                                                     (No) ──► Confirmed: Wrong Salesforce URL (LOGIN-2)
+       │                                                         │
+       └────────────────────────► (Go to Swimlane 2) ◄──────────(Yes)
+```
+
+### Extraction Guidelines for Triage Agent:
+1. **Detection Patterns**:
+   - Explicit web URLs: `http://...`, `https://...`
+   - Custom MyDomain URLs: `*.my.salesforce.com`, `*.lightning.force.com`
+   - Sandbox environments: `test.salesforce.com`, `*.sandbox.my.salesforce.com`
+   - Standard portals: `login.salesforce.com`
+2. **Contextual Narrative Extraction**:
+   - Identify when a user cites the exact URL they are browsing to:
+     - *"User cannot sign in at https://acme--test.sandbox.my.salesforce.com"* ➔ Extracted Login URL: `https://acme--test.sandbox.my.salesforce.com`
+     - *"Navigating to test.salesforce.com gives invalid credentials"* ➔ Extracted Login URL: `https://test.salesforce.com`
+     - *"User is using bookmarked URL https://oldportal.my.salesforce.com"* ➔ Extracted Login URL: `https://oldportal.my.salesforce.com`
+3. **Absence of Custom URL**:
+   - If the ticket does not mention any explicit login URL, hostname, or website link, assign `login_url = None`.
+   - The diagnosis engine will evaluate `Login URL Provided?` as `[NO]` and advance directly to user resolution across orgs.
+
+---
+
+# 4. Ambiguity & Clarification Handling
 - If a ticket says "Can't access Salesforce" or "System down" without specifying whether login failed or an object/record is missing:
   - Classify tentatively as `LOGIN` (the standard entry barrier).
   - Mark `is_ambiguous = True`.

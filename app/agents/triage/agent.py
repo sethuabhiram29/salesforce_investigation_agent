@@ -96,6 +96,12 @@ class TriageAgent:
         reasoning = llm_output.get("reasoning", "")
         resolution_source = llm_output.get("resolution_source", "contextual_narrative")
         extracted_objects = llm_output.get("objects", [])
+        extracted_login_url = (
+            incident.get("login_url")
+            or incident.get("url")
+            or llm_output.get("login_url")
+            or self._extract_login_url(f"{summary} {desc}")
+        )
 
         # 2. Deterministic Salesforce Verification: Affected User
         state.setdefault("evidence", [])
@@ -240,6 +246,7 @@ class TriageAgent:
             "\n" + "=" * 80 + "\n"
             f"[STAGE: TRIAGE] Domain: {domain}\n"
             f"- Skill File Loaded: app/skills/incident_classification.md\n"
+            f"- Login URL Extracted: {extracted_login_url or 'None provided in narrative'}\n"
             f"- Expected Criteria: {triage_exp_criteria}\n"
             f"- Observed Values:   {triage_obs_values}\n"
             f"- Comparison:        {triage_comparison}\n"
@@ -301,14 +308,17 @@ class TriageAgent:
             "resolution_source": resolution_source,
         }
 
+        extracted_entities["login_url"] = extracted_login_url
         triage_result = TriageResult(
             domain=domain,
             is_ambiguous=is_ambiguous,
             extracted_entities=extracted_entities,
+            login_url=extracted_login_url,
             confidence=0.7 if is_ambiguous else 0.95,
             reasoning=reasoning,
         )
         state["triage_result"] = triage_result.model_dump()
+        state["login_url"] = extracted_login_url
 
         # 5. Retrieve historical precedents strictly filtered by classified domain
         try:
@@ -375,7 +385,8 @@ class TriageAgent:
                 f"2. 'is_ambiguous': boolean (true if vague like 'can't access Salesforce' without detail).\n"
                 f"3. 'affected_user_identifier': The user experiencing the problem (email, username, or full name e.g. 'Daniel Ortiz', 'Priya Nair'). Priority 1: description -> Priority 2: on_behalf_of -> Priority 3: caller.\n"
                 f"4. 'mirror_user_identifier': Any colleague mentioned whose access works fine or is used as a benchmark (email, username, or full name, null if none).\n"
-                f"5. 'objects': Any Salesforce objects mentioned (e.g. Account, Contact, Opportunity).\n"
+                f"5. 'login_url': Any specific Salesforce login URL mentioned in the narrative (e.g. 'https://customdomain.my.salesforce.com', 'test.salesforce.com', null if none).\n"
+                f"6. 'objects': Any Salesforce objects mentioned (e.g. Account, Contact, Opportunity).\n"
                 f"6. 'resolution_source': Description of how the affected user was identified.\n"
                 f"7. 'reasoning': Concise explanation of the domain classification and identity attribution.\n\n"
                 f"Output strictly valid JSON only."
@@ -578,12 +589,41 @@ class TriageAgent:
         standard_objects = ["Account", "Contact", "Opportunity", "Lead", "Case", "WorkOrder", "Report", "Dashboard"]
         found_objects = [obj for obj in standard_objects if obj.lower() in full_text_lower]
 
+        login_url = self._extract_login_url(full_text)
+
         return {
             "domain": domain,
             "is_ambiguous": is_ambiguous,
             "affected_user_identifier": affected_target,
             "mirror_user_identifier": mirror_target,
+            "login_url": login_url,
             "objects": found_objects,
             "resolution_source": resolution_source,
-            "reasoning": f"{reasoning_domain} {reasoning_user}",
+            "reasoning": f"{reasoning_domain} {reasoning_user}" + (f" Extracted login URL: '{login_url}'." if login_url else ""),
         }
+
+    def _extract_login_url(self, text: str) -> Optional[str]:
+        """Extract Salesforce login URL or custom endpoint mentioned in ticket narrative."""
+        if not text:
+            return None
+        # Pattern 1: explicit http/https URL
+        url_match = re.search(r"https?://[^\s<>'\"\)\]]+", text)
+        if url_match:
+            cand = url_match.group(0).rstrip(".,;:)")
+            if any(k in cand.lower() for k in ["salesforce", "force.com", "login", "sso", "portal"]):
+                return cand
+
+        # Pattern 2: bare domain e.g. test.salesforce.com or customdomain.my.salesforce.com
+        domain_match = re.search(r"\b([a-zA-Z0-9_-]+\.(?:my\.)?salesforce\.com(?:/[^\s<>'\"\)\]]*)?)", text, re.IGNORECASE)
+        if domain_match:
+            return f"https://{domain_match.group(1).rstrip('.,;:)')}"
+
+        # Pattern 3: any token containing salesforce.com or force.com
+        for token in text.split():
+            clean = token.strip("(),;\"'<>")
+            if "salesforce.com" in clean.lower() or "force.com" in clean.lower():
+                if not clean.lower().startswith("http://") and not clean.lower().startswith("https://"):
+                    return f"https://{clean}"
+                return clean
+
+        return None

@@ -498,10 +498,7 @@ class ResolutionAgent:
                 m_emp = re.search(r"(?:new\s+(?:emp(?:loyee)?|workday)\s*(?:id|number|#)?\s*(?:is|:|=)?\s*|(?:workday|employee)\s*(?:id|number|#)\s*(?:is|:|=)?\s*)([A-Za-z0-9_-]+)", raw_text, re.IGNORECASE)
                 if m_emp:
                     target_emp_id = m_emp.group(1).strip()
-            if not target_emp_id or str(target_emp_id).lower() in ("not set", "n/a", "none", ""):
-                emp_suffix = user_id[-5:] if (user_id and len(user_id) >= 5) else str(abs(hash(username)) % 90000 + 10000)
-                target_emp_id = f"EMP-{emp_suffix.upper()}"
-            proposed_value = target_emp_id
+            proposed_value = target_emp_id if (target_emp_id and str(target_emp_id) not in ("Not Set", "N/A")) else (f"EMP-{user_id[-5:]}" if user_id and len(user_id) >= 5 else username)
             source_detail = f"historical case {matching_case.get('incident_id')}" if matching_case else f"canonical skill '{loaded_skill.title}'"
             justification = f"Dynamically derived from {source_detail}: Populate User.FederationIdentifier with authoritative Employee ID ('{proposed_value}') to restore SAML SSO authentication."
 
@@ -516,13 +513,11 @@ class ResolutionAgent:
             match = re.search(r"Only the\s+([A-Za-z0-9_]+)\s+field may be modified", skill_text, re.IGNORECASE)
             if match:
                 target_field = match.group(1)
-                fallback_emp = target_emp_id if (target_emp_id and str(target_emp_id).lower() not in ("not set", "n/a", "none", "")) else (f"EMP-{user_id[-5:].upper()}" if user_id and len(user_id) >= 5 else "EMP-10001")
-                proposed_value = True if target_field.lower() == "isactive" else fallback_emp
+                proposed_value = True if target_field.lower() == "isactive" else username
                 justification = f"Dynamically derived target field '{target_field}' from permitted operations in canonical skill '{loaded_skill.title}'."
             else:
                 target_field = "IsActive" if diagnosis.get("observed_values", {}).get("IsActive") is False else "FederationIdentifier"
-                fallback_emp = target_emp_id if (target_emp_id and str(target_emp_id).lower() not in ("not set", "n/a", "none", "")) else (f"EMP-{user_id[-5:].upper()}" if user_id and len(user_id) >= 5 else "EMP-10001")
-                proposed_value = True if target_field == "IsActive" else fallback_emp
+                proposed_value = True if target_field == "IsActive" else username
                 justification = f"Dynamically derived from observed diagnosis evidence: User.{target_field} requires remediation."
 
         # 3. Dynamically extract preconditions from skill markdown

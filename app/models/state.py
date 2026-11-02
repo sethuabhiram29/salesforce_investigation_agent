@@ -38,6 +38,7 @@ class InvestigationState(TypedDict, total=False):
 
     # 3. Triage output
     triage_result: Optional[Dict[str, Any]]
+    login_url: Optional[str]
 
     # 4. Canonical skill tracking
     skill_refs: Dict[str, Any]

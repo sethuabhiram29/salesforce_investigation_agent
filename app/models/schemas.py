@@ -37,6 +37,7 @@ class TriageResult(BaseModel):
     domain: Literal["LOGIN", "APPLICATION", "RECORD", "OBJECT"]
     is_ambiguous: bool = False
     extracted_entities: Dict[str, Any] = Field(default_factory=dict)
+    login_url: Optional[str] = None
     confidence: float = 1.0
     reasoning: str = ""
 
