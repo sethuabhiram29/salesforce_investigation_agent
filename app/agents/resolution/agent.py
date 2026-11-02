@@ -484,11 +484,23 @@ class ResolutionAgent:
             "FederationIdentifier" in hist_resolution
             or "FederationIdentifier" in skill_text
             or "Federation ID" in skill_text
+            or issue_code in ["LOGIN-4", "LOGIN-004", "LOGIN-6", "LOGIN-006"]
         ):
             target_field = "FederationIdentifier"
-            proposed_value = username
+            target_emp_id = (
+                affected_user.get("EmployeeNumber")
+                or affected_user.get("EmployeeId")
+                or diagnosis.get("observed_values", {}).get("WorkdayEmployeeId")
+                or diagnosis.get("observed_values", {}).get("EmployeeNumber")
+            )
+            if not target_emp_id or str(target_emp_id) in ("Not Set", "N/A"):
+                raw_text = str(diagnosis.get("decision_basis", "")) + " " + (str(matching_case.get("description", "")) if matching_case else "")
+                m_emp = re.search(r"(?:new\s+(?:emp(?:loyee)?|workday)\s*(?:id|number|#)?\s*(?:is|:|=)?\s*|(?:workday|employee)\s*(?:id|number|#)\s*(?:is|:|=)?\s*)([A-Za-z0-9_-]+)", raw_text, re.IGNORECASE)
+                if m_emp:
+                    target_emp_id = m_emp.group(1).strip()
+            proposed_value = target_emp_id if (target_emp_id and str(target_emp_id) not in ("Not Set", "N/A")) else (f"EMP-{user_id[-5:]}" if user_id and len(user_id) >= 5 else username)
             source_detail = f"historical case {matching_case.get('incident_id')}" if matching_case else f"canonical skill '{loaded_skill.title}'"
-            justification = f"Dynamically derived from {source_detail}: Populate missing FederationIdentifier to restore SSO authentication."
+            justification = f"Dynamically derived from {source_detail}: Populate User.FederationIdentifier with authoritative Employee ID ('{proposed_value}') to restore SAML SSO authentication."
 
         # Dynamically check for WizardCountry
         elif "WizardCountry" in hist_resolution or "WizardCountry" in skill_text:

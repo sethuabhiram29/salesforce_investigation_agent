@@ -169,7 +169,13 @@ class TriageAgent:
                 "Email": user_obj.get("Email"),
                 "Name": user_obj.get("Name"),
                 "IsActive": user_obj.get("IsActive"),
+                "EmployeeNumber": user_obj.get("EmployeeNumber"),
+                "FederationIdentifier": user_obj.get("FederationIdentifier"),
+                "Profile": user_obj.get("ProfileName") or (user_obj.get("Profile", {}).get("Name") if isinstance(user_obj.get("Profile"), dict) else user_obj.get("Profile")),
+                "UserType": user_obj.get("UserType"),
             }
+            if isinstance(state.get("affected_user"), dict):
+                state["affected_user"].update(basic_identity)
             state["evidence"].append({
                 "evidence_id": ev_id,
                 "tool_name": "salesforce_user_search",
@@ -191,7 +197,13 @@ class TriageAgent:
                 "Email": mirror_obj.get("Email"),
                 "Name": mirror_obj.get("Name"),
                 "IsActive": mirror_obj.get("IsActive"),
+                "EmployeeNumber": mirror_obj.get("EmployeeNumber"),
+                "FederationIdentifier": mirror_obj.get("FederationIdentifier"),
+                "Profile": mirror_obj.get("ProfileName") or (mirror_obj.get("Profile", {}).get("Name") if isinstance(mirror_obj.get("Profile"), dict) else mirror_obj.get("Profile")),
+                "UserType": mirror_obj.get("UserType"),
             }
+            if isinstance(state.get("mirror_user"), dict):
+                state["mirror_user"].update(mirror_basic)
             state["evidence"].append({
                 "evidence_id": ev_mirror_id,
                 "tool_name": "salesforce_user_search",

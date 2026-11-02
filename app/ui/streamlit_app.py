@@ -279,7 +279,7 @@ def get_live_salesforce_users():
     try:
         if salesforce_client.authenticate_direct():
             users = salesforce_client.execute_soql(
-                "SELECT Id, Name, Username, Email, IsActive, Profile.Name, FederationIdentifier FROM User LIMIT 50"
+                "SELECT Id, Name, Username, Email, IsActive, Profile.Name, FederationIdentifier, EmployeeNumber FROM User LIMIT 50"
             )
             return users or []
     except Exception as e:
@@ -373,6 +373,7 @@ with st.expander("🌐 **Live Salesforce Org Directory & User Details**", expand
                 "Salesforce ID": u.get("Id", "N/A"),
                 "Profile": p_name,
                 "Active": "✅ True" if u.get("IsActive") else "❌ False",
+                "Employee ID": u.get("EmployeeNumber") or "*(None / Not Set)*",
                 "Federation ID": u.get("FederationIdentifier") or "*(None / Missing)*",
             })
         st.dataframe(table_rows, use_container_width=True)
@@ -518,6 +519,8 @@ if start_btn:
                                 - **Name**: {affected.get('FirstName', '')} {affected.get('LastName', '')}
                                 - **Email**: `{affected.get('Email', 'Unknown')}`
                                 - **Salesforce ID**: `{affected.get('Id', 'N/A')}`
+                                - **Employee ID**: `{affected.get('EmployeeNumber', 'N/A')}`
+                                - **Federation ID**: `{affected.get('FederationIdentifier', 'N/A')}`
                                 - **Resolution Source**: `{affected.get('resolution_source', 'Narrative')}`
                                 """)
                             else:
@@ -530,6 +533,8 @@ if start_btn:
                                 - **Name**: {mirror.get('FirstName', '')} {mirror.get('LastName', '')}
                                 - **Email**: `{mirror.get('Email', 'Unknown')}`
                                 - **Salesforce ID**: `{mirror.get('Id', 'N/A')}`
+                                - **Employee ID**: `{mirror.get('EmployeeNumber', 'N/A')}`
+                                - **Federation ID**: `{mirror.get('FederationIdentifier', 'N/A')}`
                                 - **Role**: `Working benchmark baseline for differential permissions`
                                 """)
                             else:
