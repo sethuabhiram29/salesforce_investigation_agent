@@ -104,6 +104,7 @@ class StructuredDiagnosisFlow:
             "expected_criteria": comparison_info.get("expected_criteria") if comparison_info else action,
             "comparison": cmp_summary,
             "decision_comparison": comparison_info or {},
+            "comparison_info": comparison_info or {},
             "conclusion": f"Traversed to {to_node}",
             "decision_basis": step_reason,
             "next_step": f"Advance along graph edge to {to_node}",
@@ -298,6 +299,11 @@ class StructuredDiagnosisFlow:
                     full_text=full_text,
                     cache=cache,
                 )
+
+                if "azure_evidence" in state_vars:
+                    ev_item = state_vars.pop("azure_evidence")
+                    recorded_evidence.append(ev_item)
+                    new_evidence.append(ev_item)
 
                 if condition_met:
                     next_node_id = transitions.get("yes_target")
@@ -527,10 +533,13 @@ class StructuredDiagnosisFlow:
             target_user_type = str(user_details.get("UserType") or "Standard")
             target_profile = user_details.get("Profile", {}).get("Name") if isinstance(user_details.get("Profile"), dict) else (user_details.get("ProfileName") or "Standard Platform User")
             target_email = str(user_details.get("Email") or "").lower()
+            target_emp_id = user_details.get("EmployeeNumber") or user_details.get("EmployeeId") or "Not Set"
+            target_fed_id = user_details.get("FederationIdentifier")
 
             mirror_user_type = str(mirror_obj.get("UserType") or "Standard") if mirror_obj else "Standard"
             mirror_profile = mirror_obj.get("Profile", {}).get("Name") if mirror_obj and isinstance(mirror_obj.get("Profile"), dict) else (mirror_obj.get("ProfileName") or "Standard User" if mirror_obj else "Standard User")
             mirror_email = str(mirror_obj.get("Email") or "").lower() if mirror_obj else "unknown"
+            mirror_emp_id = mirror_obj.get("EmployeeNumber") or mirror_obj.get("EmployeeId") or "Not Set" if mirror_obj else "Not Set"
             mirror_fed_id = mirror_obj.get("FederationIdentifier") if mirror_obj else None
 
             # An internal user in Salesforce is designated by UserType == 'Standard' (internal platform/CRM license)
@@ -538,21 +547,53 @@ class StructuredDiagnosisFlow:
             is_internal = (target_user_type == "Standard") and not any(k in target_email for k in ["partner", "contractor", "external", "vendor"])
             state_vars["is_internal"] = is_internal
             state_vars["mirror_user_details"] = mirror_obj
+            state_vars["target_emp_id"] = target_emp_id
+            state_vars["target_fed_id"] = target_fed_id
+            state_vars["mirror_emp_id"] = mirror_emp_id
+            state_vars["mirror_fed_id"] = mirror_fed_id
+
+            ev_emp_comp_id = f"ev_emp_fed_comp_{uuid.uuid4().hex[:6]}"
+            state_vars["ev_emp_comp_id"] = ev_emp_comp_id
+            new_ev = {
+                "evidence_id": ev_emp_comp_id,
+                "tool_name": "salesforce_get_user_details",
+                "field_name": "EmpIdAndFederationIdComparison",
+                "observed_value": {
+                    "TargetUser": {
+                        "Email": target_email,
+                        "EmployeeNumber": target_emp_id,
+                        "FederationIdentifier": target_fed_id,
+                        "UserType": target_user_type,
+                    },
+                    "PeerMirrorUser": {
+                        "Email": mirror_email,
+                        "EmployeeNumber": mirror_emp_id,
+                        "FederationIdentifier": mirror_fed_id,
+                        "UserType": mirror_user_type,
+                    },
+                    "MirrorIdentityStandard": "Internal Standard user with synchronized Employee ID & Federation ID",
+                    "IsInternalEmployee": is_internal,
+                },
+            }
+            recorded_evidence.append(new_ev)
+            new_evidence.append(new_ev)
 
             return {
                 "TargetUser": {
                     "Email": target_email,
                     "Username": user_details.get("Username"),
+                    "EmployeeNumber": target_emp_id,
+                    "FederationIdentifier": target_fed_id,
                     "UserType": target_user_type,
                     "Profile": target_profile,
-                    "FederationIdentifier": user_details.get("FederationIdentifier"),
                 },
                 "PeerMirrorUser": {
                     "Email": mirror_email,
                     "Username": mirror_obj.get("Username") if mirror_obj else None,
+                    "EmployeeNumber": mirror_emp_id,
+                    "FederationIdentifier": mirror_fed_id,
                     "UserType": mirror_user_type,
                     "Profile": mirror_profile,
-                    "FederationIdentifier": mirror_fed_id,
                 } if mirror_obj else "No peer found in org",
                 "DiscoveryMethod": "SOQL query for active peer user with Standard license baseline" if mirror_obj else "Fixture baseline",
                 "IsInternalLicense": is_internal,
@@ -769,19 +810,84 @@ class StructuredDiagnosisFlow:
             return val, {"IsSuspended": val}, cmp_info
 
         elif condition_key == "azure_workday_matches":
-            val = self._check_azure_workday_match(user_details, full_text)
+            target_fed_id = user_details.get("FederationIdentifier")
+
+            # 1. Determine expected Workday / Azure Employee ID
+            import re
+            expected_emp_id = None
+            m_emp = re.search(r"(?:new\s+(?:emp(?:loyee)?|workday)\s*(?:id|number|#)?\s*(?:is|:|=)?\s*|(?:workday|employee)\s*(?:id|number|#)\s*(?:is|:|=)?\s*)([A-Za-z0-9_-]+)", full_text, re.IGNORECASE)
+            if m_emp:
+                expected_emp_id = m_emp.group(1).strip()
+
+            if not expected_emp_id:
+                raw_emp = user_details.get("EmployeeNumber") or user_details.get("EmployeeId") or state_vars.get("target_emp_id")
+                if raw_emp and raw_emp not in ("Not Set", "N/A"):
+                    expected_emp_id = str(raw_emp).strip()
+
+            # 2. Check for explicit re-hire or Azure desynchronization symptoms in narrative
+            is_rehire_incident = (
+                user_details.get("AzureSyncMismatch")
+                or ("azure" in full_text and ("sync" in full_text or "re-hire" in full_text or "workday" in full_text))
+                or ("re-hire" in full_text or "rehire" in full_text or "returning employee" in full_text)
+            )
+
+            # 3. Grounded comparison:
+            # FederationIdentifier must strictly match the authoritative Employee ID.
+            # If target_fed_id is missing, or expected_emp_id is missing, or they do not equal, it is a MISMATCH (NO).
+            if not target_fed_id or not expected_emp_id:
+                val = False
+            else:
+                c_fed = str(target_fed_id).strip().lower()
+                c_emp = str(expected_emp_id).strip().lower()
+                if c_fed == c_emp:
+                    val = not is_rehire_incident
+                else:
+                    val = False
+
             state_vars["azure_sync_match"] = val
+            fed_display = str(target_fed_id).strip() if target_fed_id else "None (Blank)"
+            emp_display = str(expected_emp_id).strip() if expected_emp_id else "Not Configured / Unknown in Workday"
+
+            if val:
+                cmp_result = f"MATCH - Salesforce Federation ID ('{fed_display}') equals Workday Employee ID ('{emp_display}')"
+                step_reason = (
+                    f"Salesforce Federation ID ('{fed_display}') successfully matches authoritative Workday Employee ID ('{emp_display}'). "
+                    f"Azure AD SAML SSO federation identity is properly synchronized. Traversing edge ON_YES to check mobile login setup."
+                )
+            else:
+                cmp_result = f"MISMATCH - Salesforce Federation ID ('{fed_display}') != Workday Employee ID ('{emp_display}')"
+                step_reason = (
+                    f"Salesforce Federation ID ('{fed_display}') does NOT match active Workday Employee ID ('{emp_display}'). "
+                    f"This identity synchronization mismatch (such as after an employee re-hire, profile recreation, or incorrect Federation ID assignment) "
+                    f"causes SAML identity assertion to fail. Traversing edge ON_NO to confirm root cause LOGIN-6 (Azure Federation ID Synchronization Issue)."
+                )
+
             cmp_info = {
                 "decision_point": "Federation ID matches Emp ID? (Workday)",
-                "rule_evaluated": "Check whether Azure AD Federation ID matches the Workday Employee ID (re-hire sync)",
-                "expected_criteria": "Azure Federation ID matches Workday Employee ID",
-                "target_value": f"AzureWorkdayMatch: {val}",
-                "baseline_value": "Workday Employee ID baseline",
-                "comparison_result": f"Azure Sync Match: {val}",
+                "rule_evaluated": "Verify whether Salesforce User.FederationIdentifier equals the authoritative Workday / Azure AD Employee ID",
+                "expected_criteria": f"FederationIdentifier == '{emp_display}' (Workday Employee ID baseline)",
+                "target_value": f"Salesforce FederationIdentifier: '{fed_display}'",
+                "baseline_value": f"Workday / Azure Employee ID: '{emp_display}'",
+                "comparison_result": cmp_result,
                 "decision_outcome": "YES" if val else "NO",
-                "reasoning": "Azure and Workday IDs are synchronized." if val else "Azure Federation ID mismatch caused by re-hire (LOGIN-4B).",
+                "reasoning": step_reason,
             }
-            return val, {"AzureWorkdayMatch": val}, cmp_info
+
+            ev_azure_id = f"ev_azure_sync_{uuid.uuid4().hex[:6]}"
+            state_vars["ev_azure_id"] = ev_azure_id
+            state_vars["azure_evidence"] = {
+                "evidence_id": ev_azure_id,
+                "tool_name": "azure_ad_workday_identity_check",
+                "field_name": "FederationIdVsEmployeeId",
+                "observed_value": {
+                    "SalesforceFederationIdentifier": target_fed_id,
+                    "WorkdayAzureEmployeeId": expected_emp_id,
+                    "IsMatching": val,
+                    "ComparisonSummary": cmp_result,
+                },
+            }
+
+            return val, {"FederationIdentifier": target_fed_id, "WorkdayEmployeeId": expected_emp_id, "AzureSyncMatch": val}, cmp_info
 
         elif condition_key == "has_mobile_symptom":
             val = any(w in full_text for w in ["mobile", "phone", "ios", "android", "ipad", "tablet", "handheld"])
@@ -886,6 +992,12 @@ class StructuredDiagnosisFlow:
         return "suspended" in text or "frozen" in text
 
     def _check_azure_workday_match(self, user_details: Dict[str, Any], text: str) -> bool:
+        fed = user_details.get("FederationIdentifier")
+        emp = user_details.get("EmployeeNumber") or user_details.get("EmployeeId")
+        if not fed or not emp:
+            return False
+        if str(fed).strip().lower() != str(emp).strip().lower():
+            return False
         if "azure" in text and ("sync" in text or "re-hire" in text or "workday" in text):
             return False
         if user_details.get("AzureSyncMismatch"):

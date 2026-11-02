@@ -15,6 +15,7 @@ FIXTURE_USERS = [
         "Email": "jane.doe@acme.corp",
         "FirstName": "Jane",
         "LastName": "Doe",
+        "EmployeeNumber": "EMP-00104",
         "IsActive": True,
         "FederationIdentifier": None,  # LOGIN-4: missing FederationIdentifier
         "Profile": {
@@ -32,8 +33,9 @@ FIXTURE_USERS = [
         "Email": "john.smith@acme.corp",
         "FirstName": "John",
         "LastName": "Smith",
+        "EmployeeNumber": "EMP-00103",
         "IsActive": False,  # LOGIN-3A: deactivated
-        "FederationIdentifier": "john.smith@acme.corp",
+        "FederationIdentifier": "EMP-00103",
         "Profile": {
             "Id": "00exx0000000002",
             "Name": "Delegated Administrator"
@@ -49,8 +51,9 @@ FIXTURE_USERS = [
         "Email": "sarah.connor@acme.corp",
         "FirstName": "Sarah",
         "LastName": "Connor",
+        "EmployeeNumber": "EMP-00102",
         "IsActive": True,
-        "FederationIdentifier": "sarah.connor@acme.corp",
+        "FederationIdentifier": "EMP-00102",
         "Profile": {
             "Id": "00exx0000000003",
             "Name": "Sales Representative"
@@ -74,8 +77,9 @@ FIXTURE_USERS = [
         "Email": "alex.taylor@acme.corp",
         "FirstName": "Alex",
         "LastName": "Taylor",
+        "EmployeeNumber": "EMP-00101",
         "IsActive": True,
-        "FederationIdentifier": "alex.taylor@acme.corp",
+        "FederationIdentifier": "EMP-00101",
         "Profile": {
             "Id": "00exx0000000001",
             "Name": "Standard User"
@@ -90,6 +94,40 @@ FIXTURE_USERS = [
             "001xx000001ACC": {"HasReadAccess": True, "HasEditAccess": True, "MaxAccessLevel": "All"},
         },
         "PermissionSets": ["CC360 Community User", "Cmty-PS Community User", "Conga_CLM_User"],
+        "DelegatedAdmin": False,
+        "WizardCountry": "US",
+    },
+    {
+        "Id": "005xx000006LOGIN6",
+        "Username": "daniel.ortiz@acme.corp",
+        "Email": "daniel.ortiz@acme.corp",
+        "FirstName": "Daniel",
+        "LastName": "Ortiz",
+        "EmployeeNumber": "EMP-20491",
+        "IsActive": True,
+        "FederationIdentifier": "EMP-10022",  # LOGIN-6: Mismatched Federation ID (old re-hire ID EMP-10022 vs active EMP-20491)
+        "Profile": {
+            "Id": "00exx0000000001",
+            "Name": "Standard User"
+        },
+        "PermissionSets": ["CC360 Community User"],
+        "DelegatedAdmin": False,
+        "WizardCountry": "US",
+    },
+    {
+        "Id": "005xx000007RANDOM",
+        "Username": "corrupt.fed@acme.corp",
+        "Email": "corrupt.fed@acme.corp",
+        "FirstName": "Corrupt",
+        "LastName": "Federation",
+        "EmployeeNumber": "EMP-00105",
+        "IsActive": True,
+        "FederationIdentifier": "RANDOM_CORRUPT_XYZ_999",  # Random value that does not match EmployeeNumber
+        "Profile": {
+            "Id": "00exx0000000001",
+            "Name": "Standard User"
+        },
+        "PermissionSets": [],
         "DelegatedAdmin": False,
         "WizardCountry": "US",
     }

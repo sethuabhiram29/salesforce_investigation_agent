@@ -436,7 +436,7 @@ class SalesforceMCPClient:
                 name_cond += f" OR (FirstName = '{first}' AND LastName = '{last}')"
 
             soql = (
-                f"SELECT Id, Username, Email, FirstName, LastName, Name, IsActive, FederationIdentifier "
+                f"SELECT Id, Username, Email, FirstName, LastName, Name, IsActive, FederationIdentifier, EmployeeNumber "
                 f"FROM User WHERE Email = '{safe_q}' OR Username = '{safe_q}'{name_cond}"
             )
         records = self.execute_soql(soql)
@@ -444,7 +444,7 @@ class SalesforceMCPClient:
             return records
 
         # 2. Try SOSL if exact match yielded nothing
-        sosl = f"FIND {{{clean_q}}} IN ALL FIELDS RETURNING User(Id, Username, Email, FirstName, LastName, Name, IsActive, FederationIdentifier)"
+        sosl = f"FIND {{{clean_q}}} IN ALL FIELDS RETURNING User(Id, Username, Email, FirstName, LastName, Name, IsActive, FederationIdentifier, EmployeeNumber)"
         sosl_records = self.execute_sosl(sosl)
         if sosl_records:
             return sosl_records
@@ -477,6 +477,7 @@ class SalesforceMCPClient:
                     "LastName": u.get("LastName"),
                     "IsActive": u.get("IsActive"),
                     "FederationIdentifier": u.get("FederationIdentifier"),
+                    "EmployeeNumber": u.get("EmployeeNumber"),
                 })
         return matches
 
@@ -489,6 +490,7 @@ class SalesforceMCPClient:
         "LastName",
         "IsActive",
         "FederationIdentifier",
+        "EmployeeNumber",
         "UserType",
         "ProfileId",
         "Profile",
@@ -546,7 +548,7 @@ class SalesforceMCPClient:
         if not user_id.startswith("005xx") and self.authenticate_direct():
             soql = (
                 f"SELECT Id, Username, Email, Name, FirstName, LastName, IsActive, "
-                f"FederationIdentifier, UserType, ProfileId, Profile.Name, UserRoleId, UserRole.Name, "
+                f"FederationIdentifier, EmployeeNumber, UserType, ProfileId, Profile.Name, UserRoleId, UserRole.Name, "
                 f"LastLoginDate, CreatedDate, LastModifiedDate "
                 f"FROM User WHERE Id = '{user_id}'"
             )

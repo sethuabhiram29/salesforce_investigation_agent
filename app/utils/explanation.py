@@ -25,12 +25,14 @@ def format_evidence_to_human_english(ev: Dict[str, Any]) -> str:
             profile = data.get("ProfileName") or (data.get("Profile", {}).get("Name") if isinstance(data.get("Profile"), dict) else data.get("ProfileId")) or "Standard Profile"
             fed_id = data.get("FederationIdentifier")
             fed_id_str = f"'{fed_id}'" if fed_id else "None (Blank / Unassigned)"
+            emp_id = data.get("EmployeeNumber")
+            emp_id_str = f"'{emp_id}'" if emp_id else "N/A"
             role = data.get("RoleName") or data.get("UserRoleId") or "None Assigned"
             delegated = "Yes" if data.get("DelegatedAdmin") else "No"
             return (
                 f"Retrieved live Salesforce User record for **{name}** (`{email}`, ID: `{uid}`). "
                 f"Account status is **{is_active}** (IsActive = {data.get('IsActive')}), Profile is **'{profile}'**, "
-                f"Role is **'{role}'**, SSO Federation ID is **{fed_id_str}**, and Delegated Admin is **{delegated}**."
+                f"Employee ID is **{emp_id_str}**, SSO Federation ID is **{fed_id_str}**, Role is **'{role}'**, and Delegated Admin is **{delegated}**."
             )
         return "Retrieved user details from Salesforce org."
 
@@ -81,6 +83,30 @@ def format_evidence_to_human_english(ev: Dict[str, Any]) -> str:
     elif tool == "salesforce_get_contact_wizard_details":
         return "Retrieved Contact Wizard and country configuration details from Salesforce."
 
+    elif tool == "azure_ad_workday_identity_check":
+        if isinstance(data, dict):
+            sf_fed = data.get("SalesforceFederationIdentifier", "N/A")
+            wd_emp = data.get("WorkdayAzureEmployeeId", "N/A")
+            is_match = data.get("IsMatching", False)
+            match_status = "MATCH (Synchronized)" if is_match else "MISMATCH (Desynchronized / Re-hire conflict)"
+            return (
+                f"Evaluated Azure AD & Workday SSO Federation identity alignment: "
+                f"Salesforce FederationIdentifier = **'{sf_fed}'**, Workday/Azure EmployeeNumber = **'{wd_emp}'**. "
+                f"Status: **{match_status}**."
+            )
+        return "Checked Azure AD and Workday SSO identity alignment against Salesforce FederationIdentifier."
+
+    elif tool == "compare_emp_fed_id":
+        if isinstance(data, dict):
+            t_user = data.get("TargetUser", {})
+            p_user = data.get("PeerMirrorUser", {})
+            return (
+                f"Compared Employee ID & Federation ID convention: "
+                f"Target user '{t_user.get('Username', 'User')}' (EmpId: '{t_user.get('EmployeeNumber', 'N/A')}', FedID: '{t_user.get('FederationIdentifier', 'N/A')}') "
+                f"vs Peer Mirror '{p_user.get('Username', 'Peer')}' (EmpId: '{p_user.get('EmployeeNumber', 'N/A')}', FedID: '{p_user.get('FederationIdentifier', 'N/A')}')."
+            )
+        return "Compared Employee ID and Federation ID against peer mirror user baseline."
+
     return f"Executed tool `{tool}` and recorded evidence in the investigation audit trail."
 
 
@@ -107,6 +133,16 @@ def format_observed_values_to_human_english(issue_code: str, obs_vals: Dict[str,
             parts.append("Federation Identifier (SSO ID) is blank / null")
         else:
             parts.append(f"Federation Identifier is assigned as '{fid}'")
+
+    if "EmployeeNumber" in obs_vals:
+        eid = obs_vals["EmployeeNumber"]
+        if eid:
+            parts.append(f"Employee ID is '{eid}'")
+
+    if "WorkdayEmployeeId" in obs_vals:
+        w_eid = obs_vals["WorkdayEmployeeId"]
+        if w_eid:
+            parts.append(f"Authoritative Workday / Azure Employee ID is '{w_eid}'")
 
     if "DelegatedAdmin" in obs_vals:
         del_str = "is a Delegated Admin" if obs_vals["DelegatedAdmin"] else "is not a Delegated Admin"

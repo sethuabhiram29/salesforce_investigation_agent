@@ -214,6 +214,20 @@ SAMPLE_SCENARIOS = {
         "on_behalf_of": "",
         "description": "User jane.doe@acme.corp is unable to log in to Salesforce via Okta Single Sign-On. Error states user not found in identity assertion. Please check user FederationIdentifier.",
     },
+    "LOGIN-6: Daniel Ortiz Azure Federation ID Sync Issue (Re-hire Mismatch)": {
+        "incident_id": "INC10006",
+        "short_description": "Re-hired employee cannot login via Azure SSO",
+        "caller_email": "daniel.ortiz@acme.corp",
+        "on_behalf_of": "",
+        "description": "Daniel Ortiz was re-hired under Workday employee id EMP-20491. SAML SSO fails during Azure AD authentication due to Federation ID mismatch.",
+    },
+    "LOGIN-6B: Corrupt Federation ID (Random Value vs Employee ID)": {
+        "incident_id": "INC10006B",
+        "short_description": "User cannot login via Azure SSO - corrupt identifier",
+        "caller_email": "corrupt.fed@acme.corp",
+        "on_behalf_of": "",
+        "description": "User corrupt.fed@acme.corp cannot sign into Salesforce via Azure AD SSO. User Federation ID is corrupted with a random string instead of employee ID.",
+    },
     "LOGIN-3: John Smith Account Deactivated (Delegated Admin)": {
         "incident_id": "INC10002",
         "short_description": "User locked out after medical leave",
@@ -643,11 +657,11 @@ if start_btn:
                                                 <table style="width: 100%; font-size: 0.87rem; border-collapse: collapse;">
                                                     <tr style="border-bottom: 1px solid #f1f5f9; background: #f8fafc;">
                                                         <td style="padding: 4px 8px; font-weight: 600; color: #1e40af; width: 28%;">👤 Target User:</td>
-                                                        <td style="padding: 4px 8px; font-family: monospace; color: #1e40af;">Username: {t_u.get('Username')}, Profile: {t_u.get('Profile')}, UserType: {t_u.get('UserType')}, FedID: {t_u.get('FederationIdentifier')}</td>
+                                                        <td style="padding: 4px 8px; font-family: monospace; color: #1e40af;">Username: {t_u.get('Username')}, Profile: {t_u.get('Profile')}, UserType: {t_u.get('UserType')}, EmpId: {t_u.get('EmployeeNumber', 'N/A')}, FedID: {t_u.get('FederationIdentifier')}</td>
                                                     </tr>
                                                     <tr style="border-bottom: 1px solid #f1f5f9; background: #fdf4ff;">
                                                         <td style="padding: 4px 8px; font-weight: 600; color: #7e22ce;">👥 Discovered Peer Mirror:</td>
-                                                        <td style="padding: 4px 8px; font-family: monospace; color: #7e22ce;">Username: {p_m.get('Username') if isinstance(p_m, dict) else p_m}, Profile: {p_m.get('Profile') if isinstance(p_m, dict) else 'N/A'}, UserType: {p_m.get('UserType') if isinstance(p_m, dict) else 'N/A'}, FedID: {p_m.get('FederationIdentifier') if isinstance(p_m, dict) else 'N/A'}</td>
+                                                        <td style="padding: 4px 8px; font-family: monospace; color: #7e22ce;">Username: {p_m.get('Username') if isinstance(p_m, dict) else p_m}, Profile: {p_m.get('Profile') if isinstance(p_m, dict) else 'N/A'}, UserType: {p_m.get('UserType') if isinstance(p_m, dict) else 'N/A'}, EmpId: {p_m.get('EmployeeNumber', 'N/A') if isinstance(p_m, dict) else 'N/A'}, FedID: {p_m.get('FederationIdentifier') if isinstance(p_m, dict) else 'N/A'}</td>
                                                     </tr>
                                                     <tr>
                                                         <td style="padding: 4px 8px; font-weight: 600; color: #475569;">Discovery Source:</td>
