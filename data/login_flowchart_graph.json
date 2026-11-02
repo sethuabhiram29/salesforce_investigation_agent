@@ -234,12 +234,12 @@
     },
     {
       "id": "TERMINAL_LOGIN_3_ESCALATE",
-      "name": "If any other deactivation like mulesoft need human review",
+      "name": "If any other deactivation like maxwell need manual review",
       "swimlane": "User Deactivation",
       "type": "terminal",
       "status": "escalation_required",
       "issue_code": "LOGIN-3-ESCALATE",
-      "decision_basis": "User account deactivated by automated integration (Mulesoft/Workday) or unknown actor; requires manual review per policy.",
+      "decision_basis": "User account deactivated by automated integration (Maxwell) or unknown actor; requires manual review per policy.",
       "expected_criteria": "Delegated Administrator deactivation",
       "skill_file": null
     },

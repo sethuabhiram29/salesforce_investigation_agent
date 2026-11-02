@@ -207,6 +207,20 @@ SAMPLE_SCENARIOS = {
         "on_behalf_of": "",
         "description": "User salesforceagent@00djv0000000gvhuai.com reports inability to authenticate. Verify user active status and federation ID in Salesforce.",
     },
+    "LOGIN-2: Wrong Login URL (Accessing via test.salesforce.com)": {
+        "incident_id": "INC10002A",
+        "short_description": "User using incorrect Salesforce endpoint",
+        "caller_email": "jane.doe@acme.corp",
+        "on_behalf_of": "",
+        "description": "User jane.doe@acme.corp reports cannot login. User mentions accessing via https://test.salesforce.com instead of production.",
+    },
+    "LOGIN-2B: Approved Regional Pod (India Pod https://ind01.salesforce.com)": {
+        "incident_id": "INC10002B",
+        "short_description": "User logging in via approved India regional pod",
+        "caller_email": "jane.doe@acme.corp",
+        "on_behalf_of": "",
+        "description": "User jane.doe@acme.corp accessing via https://ind01.salesforce.com cannot sign in due to missing credentials. Check user account.",
+    },
     "LOGIN-4: Jane Doe SSO Federation ID Missing": {
         "incident_id": "INC10001",
         "short_description": "Cannot login to Salesforce via Okta SSO",
@@ -227,6 +241,27 @@ SAMPLE_SCENARIOS = {
         "caller_email": "corrupt.fed@acme.corp",
         "on_behalf_of": "",
         "description": "User corrupt.fed@acme.corp cannot sign into Salesforce via Azure AD SSO. User Federation ID is corrupted with a random string instead of employee ID.",
+    },
+    "LOGIN-7: CIAM External Partner Identity Mismatch": {
+        "incident_id": "INC10007",
+        "short_description": "External partner portal SSO failure",
+        "caller_email": "external.partner@vendor.corp",
+        "on_behalf_of": "",
+        "description": "External partner external.partner@vendor.corp cannot log in to partner portal. CIAM synthetic identity mapping mismatch reported.",
+    },
+    "LOGIN-8: Salesforce Mobile App Login Issue": {
+        "incident_id": "INC10008",
+        "short_description": "Cannot authenticate on Salesforce Mobile app",
+        "caller_email": "jane.doe@acme.corp",
+        "on_behalf_of": "",
+        "description": "User jane.doe@acme.corp cannot log into the Salesforce Mobile app on handheld iOS device. Desktop web browser login works without issue.",
+    },
+    "LOGIN-9: Work Order Closing Email Notification Missing": {
+        "incident_id": "INC10009",
+        "short_description": "No email received when closing work order",
+        "caller_email": "external.contractor@vendor.corp",
+        "on_behalf_of": "",
+        "description": "External contractor external.contractor@vendor.corp reports work order email not received when closing field service work orders.",
     },
     "LOGIN-3: John Smith Account Deactivated (Delegated Admin)": {
         "incident_id": "INC10002",
