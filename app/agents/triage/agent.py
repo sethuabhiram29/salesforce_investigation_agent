@@ -236,7 +236,10 @@ class TriageAgent:
             + "=" * 80
         )
         logger.info(triage_banner)
-        print(triage_banner, flush=True)
+        try:
+            print(triage_banner, flush=True)
+        except (OSError, UnicodeEncodeError):
+            pass
 
         state["step_audit_trail"].append({
             "stage": "triage",

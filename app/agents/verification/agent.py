@@ -147,7 +147,10 @@ class VerificationAgent:
             + "=" * 80
         )
         logger.info(verif_banner)
-        print(verif_banner, flush=True)
+        try:
+            print(verif_banner, flush=True)
+        except (OSError, UnicodeEncodeError):
+            pass
 
         expected_is_active = False if (target_field == "RITMGuidance" or issue_code in ["LOGIN-1", "LOGIN-001", "LOGIN-1B", "LOGIN-001B"]) else True
         result = VerificationResult(

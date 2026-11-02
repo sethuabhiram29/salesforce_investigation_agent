@@ -105,7 +105,10 @@ class ResolutionAgent:
             + "=" * 80
         )
         logger.info(plan_banner)
-        print(plan_banner, flush=True)
+        try:
+            print(plan_banner, flush=True)
+        except (OSError, UnicodeEncodeError):
+            pass
 
         state["step_audit_trail"].append({
             "stage": "resolution_planning",
@@ -156,7 +159,10 @@ class ResolutionAgent:
             + "=" * 80
         )
         logger.info(fields_banner)
-        print(fields_banner, flush=True)
+        try:
+            print(fields_banner, flush=True)
+        except (OSError, UnicodeEncodeError):
+            pass
 
         state["step_audit_trail"].append({
             "stage": "resolution_planning",
@@ -250,7 +256,10 @@ class ResolutionAgent:
             + "=" * 80
         )
         logger.info(exec_banner)
-        print(exec_banner, flush=True)
+        try:
+            print(exec_banner, flush=True)
+        except (OSError, UnicodeEncodeError):
+            pass
 
         exec_issue_code = plan.get("issue_code") or state.get("skill_refs", {}).get("issue_code", "UNKNOWN")
         is_guidance = (action.get("action_type") == "COMMUNICATION_GUIDANCE" or field_name in ["SetupGuide", "Guidance", "Documentation", "Communication", "RITMGuidance"])

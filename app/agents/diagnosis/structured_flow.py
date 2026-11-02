@@ -57,26 +57,80 @@ class StructuredDiagnosisFlow:
         else:
             obs_summary = str(observed)
 
-        print(f"\n" + "-" * 80)
-        print(f"[KNOWLEDGE GRAPH STEP {step_num}] Swimlane: {swimlane} (Source: {graph_source})")
-        print(f"  * Current Node:      {node_name} [{node_id}]")
-        print(f"  * From Node:         {from_node}")
-        print(f"  * Action / Check:    {action}")
-        print(f"  * Tool(s) Invoked:   {', '.join(tools)}")
-        if comparison_info:
-            print(f"  * Rule Evaluated:    {comparison_info.get('rule_evaluated')}")
-            print(f"  * Expected Criteria: {comparison_info.get('expected_criteria')}")
-            print(f"  * Target User Value: {comparison_info.get('target_value')}")
-            print(f"  * Mirror / Baseline: {comparison_info.get('baseline_value')}")
-            print(f"  * Decision Outcome:  [{comparison_info.get('decision_outcome')}]")
-            print(f"  * Comparison Result: {comparison_info.get('comparison_result')}")
-            print(f"  * Decision Reasoning:{comparison_info.get('reasoning')}")
-        else:
-            print(f"  * Live Observed:     {obs_summary}")
-            print(f"  * Decision Outcome:  {decision_outcome}")
-            print(f"  * Step Explanation:  {explanation}")
-        print(f"  * Traversal Path:    {from_node} -----> {to_node}")
-        print("-" * 80, flush=True)
+        try:
+            print(f"\n" + "-" * 80)
+            try:
+                print(f"[KNOWLEDGE GRAPH STEP {step_num}] Swimlane: {swimlane} (Source: {graph_source})")
+            except (OSError, UnicodeEncodeError):
+                pass
+            try:
+                print(f"  * Current Node:      {node_name} [{node_id}]")
+            except (OSError, UnicodeEncodeError):
+                pass
+            try:
+                print(f"  * From Node:         {from_node}")
+            except (OSError, UnicodeEncodeError):
+                pass
+            try:
+                print(f"  * Action / Check:    {action}")
+            except (OSError, UnicodeEncodeError):
+                pass
+            try:
+                print(f"  * Tool(s) Invoked:   {', '.join(tools)}")
+            except (OSError, UnicodeEncodeError):
+                pass
+            if comparison_info:
+                try:
+                    print(f"  * Rule Evaluated:    {comparison_info.get('rule_evaluated')}")
+                except (OSError, UnicodeEncodeError):
+                    pass
+                try:
+                    print(f"  * Expected Criteria: {comparison_info.get('expected_criteria')}")
+                except (OSError, UnicodeEncodeError):
+                    pass
+                try:
+                    print(f"  * Target User Value: {comparison_info.get('target_value')}")
+                except (OSError, UnicodeEncodeError):
+                    pass
+                try:
+                    print(f"  * Mirror / Baseline: {comparison_info.get('baseline_value')}")
+                except (OSError, UnicodeEncodeError):
+                    pass
+                try:
+                    print(f"  * Decision Outcome:  [{comparison_info.get('decision_outcome')}]")
+                except (OSError, UnicodeEncodeError):
+                    pass
+                try:
+                    print(f"  * Comparison Result: {comparison_info.get('comparison_result')}")
+                except (OSError, UnicodeEncodeError):
+                    pass
+                try:
+                    print(f"  * Decision Reasoning:{comparison_info.get('reasoning')}")
+                except (OSError, UnicodeEncodeError):
+                    pass
+            else:
+                try:
+                    print(f"  * Live Observed:     {obs_summary}")
+                except (OSError, UnicodeEncodeError):
+                    pass
+                try:
+                    print(f"  * Decision Outcome:  {decision_outcome}")
+                except (OSError, UnicodeEncodeError):
+                    pass
+                try:
+                    print(f"  * Step Explanation:  {explanation}")
+                except (OSError, UnicodeEncodeError):
+                    pass
+            try:
+                print(f"  * Traversal Path:    {from_node} -----> {to_node}")
+            except (OSError, UnicodeEncodeError):
+                pass
+            try:
+                print("-" * 80, flush=True)
+            except (OSError, UnicodeEncodeError):
+                pass
+        except (OSError, UnicodeEncodeError):
+            pass
 
         cmp_summary = (
             f"[{comparison_info.get('decision_outcome')}] {comparison_info.get('comparison_result')}"
@@ -145,14 +199,38 @@ class StructuredDiagnosisFlow:
         start_node = neo4j_repository.get_flowchart_start_node(domain)
         graph_source = start_node.get("source", "neo4j")
 
-        print("\n" + "=" * 80)
-        print(f"  [NEO4J KNOWLEDGE GRAPH ENGINE] Traversing Decision Tree for Domain '{domain}'")
-        print(f"  * Graph Source:     {graph_source}")
-        print(f"  * Root Node ID:     {start_node.get('id')}")
-        print(f"  * Target User:      {affected_user_id}")
-        print(f"  * Mirror User:      {mirror_user.get('Email') if isinstance(mirror_user, dict) else (mirror_user or 'None')}")
-        print(f"  * Login URL:        {login_url or 'None provided in incident narrative'}")
-        print("=" * 80, flush=True)
+        try:
+            print("\n" + "=" * 80)
+            try:
+                print(f"  [NEO4J KNOWLEDGE GRAPH ENGINE] Traversing Decision Tree for Domain '{domain}'")
+            except (OSError, UnicodeEncodeError):
+                pass
+            try:
+                print(f"  * Graph Source:     {graph_source}")
+            except (OSError, UnicodeEncodeError):
+                pass
+            try:
+                print(f"  * Root Node ID:     {start_node.get('id')}")
+            except (OSError, UnicodeEncodeError):
+                pass
+            try:
+                print(f"  * Target User:      {affected_user_id}")
+            except (OSError, UnicodeEncodeError):
+                pass
+            try:
+                print(f"  * Mirror User:      {mirror_user.get('Email') if isinstance(mirror_user, dict) else (mirror_user or 'None')}")
+            except (OSError, UnicodeEncodeError):
+                pass
+            try:
+                print(f"  * Login URL:        {login_url or 'None provided in incident narrative'}")
+            except (OSError, UnicodeEncodeError):
+                pass
+            try:
+                print("=" * 80, flush=True)
+            except (OSError, UnicodeEncodeError):
+                pass
+        except (OSError, UnicodeEncodeError):
+            pass
 
         current_node = start_node
         from_label = "[Triage Agent]"
@@ -212,13 +290,34 @@ class StructuredDiagnosisFlow:
                 expected = current_node.get("expected_criteria", "Standard diagnostic pattern")
 
                 if status == "confirmed":
-                    print("\n" + "=" * 80)
-                    print(f"[ROOT CAUSE FINALIZED via KNOWLEDGE GRAPH: {node_source}]")
-                    print(f"  * Final Terminal Node:  {node_name} ({issue_code})")
-                    print(f"  * Confirmed Root Cause: {issue_code}")
-                    print(f"  * Decision Basis (WHY): {decision_basis}")
-                    print(f"  * Next Stage:           Advancing to Resolution Planning to load canonical skill file")
-                    print("=" * 80 + "\n", flush=True)
+                    try:
+                        print("\n" + "=" * 80)
+                        try:
+                            print(f"[ROOT CAUSE FINALIZED via KNOWLEDGE GRAPH: {node_source}]")
+                        except (OSError, UnicodeEncodeError):
+                            pass
+                        try:
+                            print(f"  * Final Terminal Node:  {node_name} ({issue_code})")
+                        except (OSError, UnicodeEncodeError):
+                            pass
+                        try:
+                            print(f"  * Confirmed Root Cause: {issue_code}")
+                        except (OSError, UnicodeEncodeError):
+                            pass
+                        try:
+                            print(f"  * Decision Basis (WHY): {decision_basis}")
+                        except (OSError, UnicodeEncodeError):
+                            pass
+                        try:
+                            print(f"  * Next Stage:           Advancing to Resolution Planning to load canonical skill file")
+                        except (OSError, UnicodeEncodeError):
+                            pass
+                        try:
+                            print("=" * 80 + "\n", flush=True)
+                        except (OSError, UnicodeEncodeError):
+                            pass
+                    except (OSError, UnicodeEncodeError):
+                        pass
 
                     findings = [
                         Finding(
@@ -238,13 +337,34 @@ class StructuredDiagnosisFlow:
                         self.traversal_steps,
                     )
                 else:
-                    print("\n" + "=" * 80)
-                    print(f"[ESCALATION NODE REACHED via KNOWLEDGE GRAPH: {node_source}]")
-                    print(f"  * Terminal Node:   {node_name} ({issue_code})")
-                    print(f"  * Escalation Code: {issue_code}")
-                    print(f"  * Decision Basis:  {decision_basis}")
-                    print(f"  * Next Stage:      Routing incident to Tier-2 human support team")
-                    print("=" * 80 + "\n", flush=True)
+                    try:
+                        print("\n" + "=" * 80)
+                        try:
+                            print(f"[ESCALATION NODE REACHED via KNOWLEDGE GRAPH: {node_source}]")
+                        except (OSError, UnicodeEncodeError):
+                            pass
+                        try:
+                            print(f"  * Terminal Node:   {node_name} ({issue_code})")
+                        except (OSError, UnicodeEncodeError):
+                            pass
+                        try:
+                            print(f"  * Escalation Code: {issue_code}")
+                        except (OSError, UnicodeEncodeError):
+                            pass
+                        try:
+                            print(f"  * Decision Basis:  {decision_basis}")
+                        except (OSError, UnicodeEncodeError):
+                            pass
+                        try:
+                            print(f"  * Next Stage:      Routing incident to Tier-2 human support team")
+                        except (OSError, UnicodeEncodeError):
+                            pass
+                        try:
+                            print("=" * 80 + "\n", flush=True)
+                        except (OSError, UnicodeEncodeError):
+                            pass
+                    except (OSError, UnicodeEncodeError):
+                        pass
 
                     return (
                         self._build_escalation_result(

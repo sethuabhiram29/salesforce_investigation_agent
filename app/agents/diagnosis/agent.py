@@ -254,7 +254,10 @@ class DiagnosisAgent:
                     f"were systematically evaluated against live Salesforce evidence and contradicted/exhausted. "
                     f"Traversing cross-domain fallback directed edge in Knowledge Graph to evaluate secondary domain '{domain}'."
                 )
-                print("\n" + "=" * 80 + f"\n{boundary_notice}\n" + "=" * 80 + "\n", flush=True)
+                try:
+                    print("\n" + "=" * 80 + f"\n{boundary_notice}\n" + "=" * 80 + "\n", flush=True)
+                except (OSError, UnicodeEncodeError):
+                    pass
                 logger.info(boundary_notice)
 
             for rank_idx, issue_code in enumerate(ordered_candidates, 1):
@@ -357,7 +360,10 @@ class DiagnosisAgent:
                         + "=" * 80
                     )
                     logger.info(eval_banner)
-                    print(eval_banner, flush=True)
+                    try:
+                        print(eval_banner, flush=True)
+                    except (OSError, UnicodeEncodeError):
+                        pass
 
                     # Audit trail for Candidate Evaluation
                     state["step_audit_trail"].append({
@@ -402,7 +408,10 @@ class DiagnosisAgent:
                         + "=" * 80
                     )
                     logger.info(rc_banner)
-                    print(rc_banner, flush=True)
+                    try:
+                        print(rc_banner, flush=True)
+                    except (OSError, UnicodeEncodeError):
+                        pass
 
                     # SEPARATE STAGE: Confirmation of Root Cause
                     state["step_audit_trail"].append({
@@ -456,7 +465,10 @@ class DiagnosisAgent:
                         + "=" * 80
                     )
                     logger.info(eval_banner)
-                    print(eval_banner, flush=True)
+                    try:
+                        print(eval_banner, flush=True)
+                    except (OSError, UnicodeEncodeError):
+                        pass
 
                     state["step_audit_trail"].append({
                         "stage": "diagnosis",
@@ -503,7 +515,10 @@ class DiagnosisAgent:
                         + "=" * 80
                     )
                     logger.info(eval_banner)
-                    print(eval_banner, flush=True)
+                    try:
+                        print(eval_banner, flush=True)
+                    except (OSError, UnicodeEncodeError):
+                        pass
 
                     state["step_audit_trail"].append({
                         "stage": "diagnosis",
