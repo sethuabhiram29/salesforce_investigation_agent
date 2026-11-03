@@ -49,12 +49,12 @@ No Salesforce metadata mutation is permitted (account creation requires standard
 1. Add a comprehensive work note to the ServiceNow incident detailing:
    - The user identifiers checked (email, employee ID).
    - The complete list of Salesforce organizations searched (NA `bdx`, EMEA `bd2my`, ACE/GA `bdxga`, SMAX `bdsmx`) and the zero-match verification outcome.
-2. Inform the user in ticket communication that no active account was located in any enterprise Salesforce organization, and that a formal **Salesforce User Provisioning Request (RITM)** must be submitted in ServiceNow to obtain access.
-3. Reassign and reroute the incident ticket to the **HCL Service Desk** assignment group for provisioning assistance and fulfillment.
+2. Inform the user in ticket communication that no active account was located in any enterprise Salesforce organization. No RITM request is required from the caller at this stage; the incident is being rerouted directly to the HCL Service Desk for further handling.
+3. Reassign and reroute the incident ticket to the **HCL Service Desk** assignment group for further assistance.
 
 ## Preconditions and permitted operations
 - Permitted: ServiceNow work note update, incident customer notification, assignment group reassignment to HCL Service Desk.
-- Prohibited: direct creation of user records in Salesforce without an approved RITM.
+- Prohibited: direct creation of user records in Salesforce without an approved onboarding workflow.
 
 # HITL
 - Approval required: only if policy mandates approval for cross-department incident rerouting. No Salesforce writes involved.
@@ -62,10 +62,10 @@ No Salesforce metadata mutation is permitted (account creation requires standard
 - Valid approval: Explicit confirmation to notify user and reroute to HCL Service Desk.
 
 # Verification
-- Expected state: Incident contains complete cross-org search work note, user notification regarding RITM submission, and reassignment to HCL Service Desk.
+- Expected state: Incident contains complete cross-org search work note, user communication, and reassignment to HCL Service Desk.
 - Checks: Re-query ServiceNow incident to confirm work note and assignment group updates.
 
 # Safety Rules
 - Never invent evidence or user identifiers.
 - Never conclude a user is absent from a tool error or timeout.
-- Never directly create user accounts in production without an authorized RITM workflow.
+- Never directly create user accounts in production without an authorized onboarding workflow.

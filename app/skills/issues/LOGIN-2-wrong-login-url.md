@@ -33,7 +33,7 @@ The caller cannot reach or sign in to Salesforce because they are using an unaut
    - **Scenario 2: User Does Not Exist in the Main Organization**:
      - Confirm that the user's account could not be located in the Main Organization.
      - The wrong URL is not the only issue—the user lacks a provisioned account.
-     - Route to **LOGIN-1**: Advise user to submit an onboarding/provisioning request (RITM) in ServiceNow and reroute ticket to HCL Service Desk.
+     - Route to **LOGIN-1**: Ticket is rerouted directly to HCL Service Desk for further handling (no RITM required from caller).
 
 ## Permitted diagnostic tools
 - Salesforce URL validation (`salesforce_validate_url`).

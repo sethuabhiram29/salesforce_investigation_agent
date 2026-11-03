@@ -207,7 +207,7 @@
       "type": "terminal",
       "status": "confirmed",
       "issue_code": "LOGIN-1",
-      "decision_basis": "User account could not be located in primary org or any registered secondary org. A user provisioning request (RITM) must be raised in ServiceNow; rerouting ticket to HCL Service Desk.",
+      "decision_basis": "User account could not be located in primary org or any registered secondary org. Incident ticket is rerouted directly to HCL Service Desk for further handling (no RITM required from caller).",
       "expected_criteria": "User account exists in Salesforce",
       "skill_file": "LOGIN-1-user-account-not-available.md"
     },

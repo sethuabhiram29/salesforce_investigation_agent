@@ -1,6 +1,6 @@
 ---
 title: Incident Classification and Semantic Identity Resolution Skill
-version: 5
+version: 6
 purpose: Contextual triage, domain classification, affected user resolution, mirror user extraction, and enterprise multi-org URL/identity verification
 ---
 
@@ -110,28 +110,32 @@ Check User in Main Org            Check User in Main Org             Check User 
 User Exists:    User Missing:     User Exists:    User Missing:      User Exists:    User Missing:
 Main cause is   No account        Right URL.      Check other orgs.  Belongs here.   CHECK MAIN ORG!
 wrong URL.      anyway.           Proceed with    If in EMEA/ACE ➔   Reroute to      If in Main Org ➔
-Provide bdx     Advise RITM       deep login      give that URL &    regional        "You are Main Org,
-URL & verify    via HCL           investigation   reroute.           team.           use bdx URL!"
-via Verifier.   Service Desk.     (Active/FedID). If in none ➔ RITM.                 If in other ➔ give URL
-                                                                                     If in none ➔ RITM.
+Provide bdx     Reroute to        deep login      give that URL &    regional        "You are Main Org,
+URL & verify    HCL Desk.         investigation   reroute.           team.           use bdx URL!"
+via Verifier.   (No RITM)         (Active/FedID). If in none ➔                       If in other ➔ give URL
+                                                  Reroute HCL Desk.                  If in none ➔
+                                                  (No RITM)                          Reroute HCL Desk (No RITM)
 ```
 
 ### Universal Rule for "User Not Found / None" Cases:
 Across all paths, if an affected user cannot be located in the required organization or in any registered corporate organization:
 1. Document the list of organizations searched in the ServiceNow work notes.
-2. Inform the user that an active account does not exist and a formal **Salesforce User Provisioning Request (RITM)** must be raised.
-3. Reroute the ticket to the **HCL Service Desk** for fulfillment.
+2. Inform the user that an active account was not located across any corporate Salesforce organization. No RITM is required from the caller; the incident ticket is rerouted directly to the **HCL Service Desk** for further handling.
+3. Reroute the ticket to the **HCL Service Desk** assignment group.
+
+> [!NOTE]
+> RITM submission guidance is reserved exclusively for callers with a verified URL who are present in the Main Organization but require approval/reactivation (e.g. Manage User RITM for deactivated accounts under LOGIN-3 / LOGIN-3A). Callers missing from all organizations do not raise an RITM; they are rerouted directly to the HCL Service Desk.
 
 ---
 
 # 4. Canonical Login Knowledge Graph Swimlanes (12 Swimlanes)
 
 1. **Wrong Login Url**: Ingests Triage Result (`Affected User`, `Division / LOB`, `Mirror User`, `Login URL`). Evaluates `Login URLs Provided?` and validates against approved enterprise orgs (`bdx`, `bd2my`, `bdxga`, `bdsmx`).
-   - If unapproved: checks user in Main Org. If user exists ➔ confirms **LOGIN-2**; if missing ➔ routes to **LOGIN-1** (RITM via HCL Service Desk).
+   - If unapproved: checks user in Main Org. If user exists ➔ confirms **LOGIN-2**; if missing ➔ routes to **LOGIN-1** (Reroute directly to HCL Service Desk; no RITM required).
    - If cross-org: checks user in secondary org and Main Org. If Main Org user used cross-org link ➔ confirms **LOGIN-2**; if user exists in regional org ➔ confirms **LOGIN-1B** (regional scope).
-2. **User not found in any org**: Searches primary org (`bdx.my.salesforce.com`). If missing, queries secondary orgs (EMEA, ACE/GA, SMAX). Confirms **LOGIN-1** (User not found) if absent from all orgs; advises RITM and reroutes to HCL Service Desk.
+2. **User not found in any org**: Searches primary org (`bdx.my.salesforce.com`). If missing, queries secondary orgs (EMEA, ACE/GA, SMAX). Confirms **LOGIN-1** (User not found) if absent from all orgs; reroutes directly to HCL Service Desk without requiring an RITM from the user.
 3. **User found in another org**: Confirms **LOGIN-1B** if user account is located in an alternate corporate org (EMEA `bd2my`, ACE/GA `bdxga`, or SMAX `bdsmx`). Documents approved regional URL and reroutes to regional team.
-4. **User Deactivation**: Checks `IsActive`. If `False`, inspects Setup Audit Trail. Confirms **LOGIN-3** if deactivated by Delegated Administrator (DA); escalates to **LOGIN-3-ESCALATE** if deactivated by automated integration (Mulesoft/Workday).
+4. **User Deactivation**: Checks `IsActive`. If `False`, inspects Setup Audit Trail. Confirms **LOGIN-3** if deactivated by Delegated Administrator (DA); escalates to **LOGIN-3-ESCALATE** if deactivated by automated integration (Mulesoft/Workday). User with verified URL in Main Org submits a Manage User RITM for reactivation approval.
 5. **Federation ID Missing**: Fetches Mirror User and performs `Compare EmpId and Federation Id of Mirror user`. Evaluates `Is same? (Internal)`:
    - If `YES` (Internal archetype where EmpId == FedId): Checks `Federation ID Blank?` -> Confirms **LOGIN-4** if missing.
    - If `NO` (External / CIAM archetype): Jumps directly across Swimlanes 6-8 into Swimlane 9 (`CIAM Synchronization External`).

@@ -418,8 +418,8 @@ class ResolutionAgent:
             ]
         elif issue_code in ["LOGIN-1", "LOGIN-001"]:
             target_field = "Guidance"
-            proposed_value = f"User '{username}' does not exist in any corporate Salesforce org (NA, EMEA, GA, ServiceMax, RIM). Please submit a User Provisioning / Onboarding RITM in ServiceNow to request an account."
-            justification = "Dynamically derived from SOP LOGIN-001: User account not available in any org. Guide user/manager to submit account creation request."
+            proposed_value = f"User '{username}' does not exist in any corporate Salesforce org (NA, EMEA, GA, ServiceMax, RIM). Incident ticket is rerouted directly to HCL Service Desk for further handling (no RITM required from caller)."
+            justification = "Dynamically derived from SOP LOGIN-001: User account not available in any org. Reroute ticket directly to HCL Service Desk."
             preconditions = [
                 "Searched primary SFDC NA org with 0 results",
                 "Searched secondary orgs (EMEA, GA, ServiceMax, RIM) with 0 results",

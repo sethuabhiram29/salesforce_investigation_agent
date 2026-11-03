@@ -877,7 +877,7 @@ class StructuredDiagnosisFlow:
                 "reasoning": (
                     f"User '{target}' exists in Main Org (NA). The unapproved URL is the primary cause of login failure. Traversing edge ON_YES to TERMINAL_LOGIN_2 (provide bdx URL and verify)."
                     if val
-                    else f"User '{target}' does NOT exist in Main Org. The user lacks an account regardless of URL. Traversing edge ON_NO to TERMINAL_LOGIN_1 (Advise user provisioning RITM and reroute to HCL Service Desk)."
+                    else f"User '{target}' does NOT exist in Main Org. The user lacks an account regardless of URL. Traversing edge ON_NO to TERMINAL_LOGIN_1 (Reroute ticket directly to HCL Service Desk; no RITM required)."
                 ),
             }
             return val, {"ExistsInMain": val, "Target": target}, cmp_info
