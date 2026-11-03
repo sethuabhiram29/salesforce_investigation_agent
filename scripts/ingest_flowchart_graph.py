@@ -176,6 +176,24 @@ def ingest_flowchart_into_neo4j(
             MERGE (d)-[:STARTS_AT]->(start)
         """, domain=domain_name, start_id=start_node_id)
 
+        # 6. Ingest Approved Salesforce Enterprise Organizations & URLs
+        approved_orgs = graph_data.get("approved_orgs", [])
+        if approved_orgs:
+            logger.info("Ingesting %d Approved Salesforce Orgs into Neo4j...", len(approved_orgs))
+            session.run("""
+                UNWIND $rows AS r
+                MERGE (o:SalesforceOrg {org_id: r.org_id})
+                SET o.name = r.name,
+                    o.full_name = r.full_name,
+                    o.login_url = r.login_url,
+                    o.domain_name = r.domain_name,
+                    o.is_main = r.is_main,
+                    o.description = r.description
+                WITH o
+                MATCH (d:Domain {name: 'LOGIN'})
+                MERGE (d)-[:HAS_APPROVED_ORG]->(o)
+            """, rows=approved_orgs)
+
         logger.info("Successfully ingested Knowledge Graph for Domain '%s' into Neo4j!", domain_name)
 
     driver.close()

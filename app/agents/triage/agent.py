@@ -476,7 +476,7 @@ class TriageAgent:
 
                 for nm in name_matches:
                     cand = nm.strip()
-                    if not any(sw in cand.lower() for sw in ["sso", "federation", "salesforce", "servicenow", "login", "access", "failed", "error", "morning", "afternoon"]):
+                    if not any(sw in cand.lower() for sw in ["sso", "federation", "salesforce", "servicenow", "login", "access", "failed", "error", "morning", "afternoon", "locked", "locked out", "lockout", "deactivated", "cannot", "can't", "unable", "sign in"]):
                         # Verify against Salesforce via MCP to confirm it's an actual user
                         matches = salesforce_user_search(cand)
                         if matches:
@@ -558,28 +558,31 @@ class TriageAgent:
         is_ambiguous = False
         domain = "LOGIN"
 
+        # Dedicated 3rd-party application packages vs general portal
+        dedicated_app_match = any(ac in full_text_lower for ac in ["cc360", "pharm", "cmty-ps", "conga", "clm", "apttus", "x-author", "showpad", "appexchange"])
+
         # Deterministic hierarchy as per incident_classification.md
         if ("can't access salesforce at all" in full_text_lower or "cannot access salesforce at all" in full_text_lower) and not (
-            login_match or object_match or has_specific_record or app_match
+            login_match or object_match or has_specific_record or dedicated_app_match
         ):
             domain = "LOGIN"
             is_ambiguous = True
             reasoning_domain = "Vague description ('can't access salesforce at all'); flagged as ambiguous."
-        elif app_match:
+        elif dedicated_app_match and not login_match:
             domain = "APPLICATION"
-            reasoning_domain = "Matched connected application or portal symptom."
-        elif has_specific_record and not login_match:
+            reasoning_domain = "Matched dedicated connected application (CC360, Pharm, Conga, Showpad)."
+        elif login_match or self._extract_login_url(full_text):
+            domain = "LOGIN"
+            reasoning_domain = "Matched authentication, session, SSO, or login URL endpoint symptom."
+        elif has_specific_record:
             domain = "RECORD"
             reasoning_domain = "Matched specific row-level record instance or sharing rule symptom."
-        elif login_match and not has_specific_record:
-            domain = "LOGIN"
-            reasoning_domain = "Matched authentication, session, or SSO login symptom."
         elif object_match:
             domain = "OBJECT"
             reasoning_domain = "Matched object-level CRUD or FLS permission symptom."
-        elif login_match:
-            domain = "LOGIN"
-            reasoning_domain = "Matched authentication or login symptom."
+        elif app_match:
+            domain = "APPLICATION"
+            reasoning_domain = "Matched connected application or portal symptom."
         else:
             domain = "LOGIN"
             is_ambiguous = True
@@ -606,19 +609,61 @@ class TriageAgent:
         """Extract Salesforce login URL or custom endpoint mentioned in ticket narrative."""
         if not text:
             return None
-        # Pattern 1: explicit http/https URL
+
+        # Pattern 1: Explicit labelled URL/endpoint pattern (e.g. "Login URL: https://..." or "Endpoint: bdx.my.salesforce.com")
+        label_match = re.search(
+            r"(?:login\s*url|login_url|login\s*link|endpoint|target\s*url|accessing\s*url|link|url)\s*[:=]\s*([^\s,;\"\'<>]+)",
+            text,
+            re.IGNORECASE,
+        )
+        if label_match:
+            cand = label_match.group(1).strip(".,;:)")
+            if cand.lower().startswith("http://") or cand.lower().startswith("https://"):
+                return cand
+            return f"https://{cand}"
+
+        # Pattern 2: Explicit http/https URL anywhere in narrative
         url_match = re.search(r"https?://[^\s<>'\"\)\]]+", text)
         if url_match:
             cand = url_match.group(0).rstrip(".,;:)")
-            if any(k in cand.lower() for k in ["salesforce", "force.com", "login", "sso", "portal"]):
-                return cand
+            return cand
 
-        # Pattern 2: bare domain e.g. test.salesforce.com or customdomain.my.salesforce.com
-        domain_match = re.search(r"\b([a-zA-Z0-9_-]+\.(?:my\.)?salesforce\.com(?:/[^\s<>'\"\)\]]*)?)", text, re.IGNORECASE)
+        # Pattern 3: Bare enterprise Salesforce domain (bdx, bd2my, bdxga, bdsmx, *.salesforce.com, *.force.com)
+        domain_match = re.search(
+            r"\b([a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*\.(?:salesforce\.com|force\.com)(?:/[^\s<>'\"\)\]]*)?)",
+            text,
+            re.IGNORECASE,
+        )
         if domain_match:
-            return f"https://{domain_match.group(1).rstrip('.,;:)')}"
+            cand = domain_match.group(1).rstrip(".,;:)")
+            return f"https://{cand}"
 
-        # Pattern 3: any token containing salesforce.com or force.com
+        # Pattern 4: Bare domain for approved orgs specifically
+        approved_tokens = [
+            "bdx.my.salesforce.com",
+            "bd2my.salesforce.com",
+            "bd2.my.salesforce.com",
+            "bdxga.my.salesforce.com",
+            "bdsmx.my.salesforce.com",
+        ]
+        text_lower = text.lower()
+        for tok in approved_tokens:
+            if tok in text_lower:
+                return f"https://{tok}"
+
+        # Pattern 5: Contextual action phrases like "accessing <url>", "navigating to <url>", "logging in at <url>"
+        context_match = re.search(
+            r"(?:accessing|navigating to|logging in at|browsing to|trying to access|connecting to)\s+([a-zA-Z0-9_.-]+\.[a-zA-Z]{2,}(?:/[^\s<>'\"\)\]]*)?)",
+            text,
+            re.IGNORECASE,
+        )
+        if context_match:
+            cand = context_match.group(1).rstrip(".,;:)")
+            if not cand.startswith("http://") and not cand.startswith("https://"):
+                return f"https://{cand}"
+            return cand
+
+        # Pattern 6: Any token containing salesforce.com or force.com
         for token in text.split():
             clean = token.strip("(),;\"'<>")
             if "salesforce.com" in clean.lower() or "force.com" in clean.lower():

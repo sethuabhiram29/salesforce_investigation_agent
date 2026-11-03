@@ -207,19 +207,21 @@ SAMPLE_SCENARIOS = {
         "on_behalf_of": "",
         "description": "User salesforceagent@00djv0000000gvhuai.com reports inability to authenticate. Verify user active status and federation ID in Salesforce.",
     },
-    "LOGIN-2: Wrong Login URL (Accessing via test.salesforce.com)": {
-        "incident_id": "INC10002A",
-        "short_description": "User using incorrect Salesforce endpoint",
-        "caller_email": "jane.doe@acme.corp",
-        "on_behalf_of": "",
-        "description": "User jane.doe@acme.corp reports cannot login. User mentions accessing via https://test.salesforce.com instead of production.",
-    },
-    "LOGIN-2B: Approved Regional Pod (India Pod https://ind01.salesforce.com)": {
+    "LOGIN-2: Wrong Login URL (Accessing via unapproved endpoint)": {
         "incident_id": "INC10002B",
-        "short_description": "User logging in via approved India regional pod",
+        "short_description": "User cannot login - invalid portal endpoint",
         "caller_email": "jane.doe@acme.corp",
         "on_behalf_of": "",
-        "description": "User jane.doe@acme.corp accessing via https://ind01.salesforce.com cannot sign in due to missing credentials. Check user account.",
+        "login_url": "https://old-portal.invalid.com/login",
+        "description": "User jane.doe@acme.corp is trying to log into Salesforce using bookmarked URL https://old-portal.invalid.com/login instead of production org bdx.my.salesforce.com.",
+    },
+    "LOGIN-1B: User Found in Alternate Org (EMEA)": {
+        "incident_id": "INC10001B",
+        "short_description": "User not found in North America production org",
+        "caller_email": "emma.watson@acme.corp",
+        "on_behalf_of": "",
+        "login_url": "https://bdx.my.salesforce.com",
+        "description": "User emma.watson@acme.corp reports login failure on main org bdx.my.salesforce.com. Check if user belongs to EMEA org bd2my.salesforce.com.",
     },
     "LOGIN-4: Jane Doe SSO Federation ID Missing": {
         "incident_id": "INC10001",
@@ -241,27 +243,6 @@ SAMPLE_SCENARIOS = {
         "caller_email": "corrupt.fed@acme.corp",
         "on_behalf_of": "",
         "description": "User corrupt.fed@acme.corp cannot sign into Salesforce via Azure AD SSO. User Federation ID is corrupted with a random string instead of employee ID.",
-    },
-    "LOGIN-7: CIAM External Partner Identity Mismatch": {
-        "incident_id": "INC10007",
-        "short_description": "External partner portal SSO failure",
-        "caller_email": "external.partner@vendor.corp",
-        "on_behalf_of": "",
-        "description": "External partner external.partner@vendor.corp cannot log in to partner portal. CIAM synthetic identity mapping mismatch reported.",
-    },
-    "LOGIN-8: Salesforce Mobile App Login Issue": {
-        "incident_id": "INC10008",
-        "short_description": "Cannot authenticate on Salesforce Mobile app",
-        "caller_email": "jane.doe@acme.corp",
-        "on_behalf_of": "",
-        "description": "User jane.doe@acme.corp cannot log into the Salesforce Mobile app on handheld iOS device. Desktop web browser login works without issue.",
-    },
-    "LOGIN-9: Work Order Closing Email Notification Missing": {
-        "incident_id": "INC10009",
-        "short_description": "No email received when closing work order",
-        "caller_email": "external.contractor@vendor.corp",
-        "on_behalf_of": "",
-        "description": "External contractor external.contractor@vendor.corp reports work order email not received when closing field service work orders.",
     },
     "LOGIN-3: John Smith Account Deactivated (Delegated Admin)": {
         "incident_id": "INC10002",
@@ -439,13 +420,15 @@ with st.expander("📚 **Knowledge Base Canonical SOPs (`data/sop_scenarios_sele
 
 # --- INCIDENT INPUT FORM ---
 with st.expander("📝 **ServiceNow Incident Intake Form**", expanded=True):
-    col1, col2, col3 = st.columns([1.5, 2, 2])
+    col1, col2, col3, col4 = st.columns([1.2, 1.8, 1.8, 1.8])
     with col1:
         incident_id = st.text_input("Incident ID", value=preset_data["incident_id"])
     with col2:
         caller_email = st.text_input("Caller Email", value=preset_data["caller_email"])
     with col3:
         on_behalf_of = st.text_input("On Behalf Of (Optional)", value=preset_data.get("on_behalf_of", ""))
+    with col4:
+        login_url = st.text_input("Login URL / Endpoint (Optional)", value=preset_data.get("login_url", ""), help="Enterprise login URL (e.g. bdx.my.salesforce.com, bd2my.salesforce.com, or custom endpoint)")
 
     short_description = st.text_input("Short Description / Summary", value=preset_data["short_description"])
     description = st.text_area("Full Description / Narrative", value=preset_data["description"], height=100)
@@ -460,6 +443,7 @@ if start_btn:
         "short_description": short_description.strip(),
         "caller_email": caller_email.strip(),
         "on_behalf_of": on_behalf_of.strip() if on_behalf_of else None,
+        "login_url": login_url.strip() if login_url else None,
         "description": description.strip(),
     }
 
@@ -471,6 +455,7 @@ if start_btn:
 
     initial_state = {
         "incident": ticket,
+        "login_url": login_url.strip() if login_url else None,
         "evidence": [],
         "historical_cases": [],
         "trace_events": [],
@@ -523,6 +508,7 @@ if start_btn:
                         st.markdown(f"""
                         **Orchestrator Stage Summary**: Evaluated incoming ticket narrative against canonical classification skill.
                         - **Classified Domain**: <span class="{domain_class}">{domain}</span>
+                        - **Login URL / Endpoint**: <code>{state.get('login_url') or triage.get('login_url') or 'None cited in ticket (Skipping to Swimlane 2)'}</code>
                         - **Ambiguity Detected**: `{"Yes (Broad symptom - will perform cross-domain probe)" if is_ambig else "No (High confidence)"}`
                         - **Triage Reasoning**: *{triage.get("reasoning", "Extracted domain indicators from symptom profile.")}*
                         - 🎯 **Decision Basis**: *{triage_audit.get("decision_basis", "Domain determined by ticket narrative keywords.")}*
@@ -574,10 +560,6 @@ if start_btn:
                                 """)
                             else:
                                 st.info("No comparative mirror user mentioned in ticket.")
-
-                        extracted_url = triage.get("login_url") or accumulated_state.get("login_url")
-                        url_badge = f"`{extracted_url}`" if extracted_url else "*None provided in narrative (Standard org login)*"
-                        st.markdown(f"**🌐 Extracted Login URL (Knowledge Graph Swimlane 1 Anchor):** {url_badge}")
 
                         if history:
                             st.markdown("##### 🧠 PostgreSQL pgvector Historical Precedents")

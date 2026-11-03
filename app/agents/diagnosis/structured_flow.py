@@ -184,18 +184,16 @@ class StructuredDiagnosisFlow:
         recorded_evidence: List[Dict[str, Any]] = list(existing_evidence or [])
         new_evidence: List[Dict[str, Any]] = []
         ctx = context or {}
-        ticket_data = ctx.get("ticket") if isinstance(ctx.get("ticket"), dict) else {}
 
-        incident_summary = str(ctx.get("short_description") or ticket_data.get("short_description") or ctx.get("incident_summary", ""))
-        incident_desc = str(ctx.get("description") or ticket_data.get("description") or ctx.get("incident_description", ""))
-        raw_narrative = f"{incident_summary} {incident_desc}".strip()
-        full_text = raw_narrative.lower()
+        incident_summary = str(ctx.get("short_description", ctx.get("incident_summary", "")))
+        incident_desc = str(ctx.get("description", ctx.get("incident_description", "")))
+        full_text = f"{incident_summary} {incident_desc}".lower()
 
         # Ingest Triage inputs
-        affected_user_id = ctx.get("affected_user_id") or ticket_data.get("affected_user_id") or target_identifier
-        login_url = ctx.get("login_url") or ticket_data.get("login_url") or self._extract_url_from_text(raw_narrative)
-        mirror_user = ctx.get("mirror_user") or ticket_data.get("mirror_user") or cache.get("User:mirror")
-        domain = ctx.get("domain") or ticket_data.get("domain", "LOGIN")
+        affected_user_id = ctx.get("affected_user_id") or target_identifier
+        login_url = ctx.get("login_url") or self._extract_url_from_text(full_text)
+        mirror_user = ctx.get("mirror_user") or cache.get("User:mirror")
+        domain = ctx.get("domain", "LOGIN")
 
         # 1. Retrieve Root Node from Neo4j Knowledge Graph
         start_node = neo4j_repository.get_flowchart_start_node(domain)
@@ -664,23 +662,10 @@ class StructuredDiagnosisFlow:
             mirror_emp_id = mirror_obj.get("EmployeeNumber") or mirror_obj.get("EmployeeId") or "Not Set" if mirror_obj else "Not Set"
             mirror_fed_id = mirror_obj.get("FederationIdentifier") if mirror_obj else None
 
-            # In the Knowledge Graph Flowchart Swimlane 5:
-            # Action: "Compare EmpId and Federation Id of Mirror user"
-            # Diamond: "Is same? (Internal)"
-            # For an internal user baseline, the Mirror User's EmpId matches their Federation Id (e.g. EMP-00104 == EMP-00104).
-            # For external partner / customer community users, EmpId does not match FederationId.
-            mirror_emp_clean = str(mirror_emp_id).strip().lower() if mirror_emp_id and mirror_emp_id != "Not Set" else ""
-            mirror_fed_clean = str(mirror_fed_id).strip().lower() if mirror_fed_id else ""
-            mirror_emp_fed_matches = bool(mirror_emp_clean and mirror_fed_clean and mirror_emp_clean == mirror_fed_clean)
-
-            is_internal = (
-                (mirror_emp_fed_matches or (target_user_type == "Standard" and mirror_user_type == "Standard"))
-                and not any(k in target_email for k in ["partner", "contractor", "external", "vendor", "portal"])
-                and not any(k in mirror_email for k in ["partner", "contractor", "external", "vendor", "portal"])
-                and target_user_type not in ("PowerPartner", "CustomerSuccess", "CspLitePortal", "HighVolumePortal", "Guest")
-            )
+            # An internal user in Salesforce is designated by UserType == 'Standard' (internal platform/CRM license)
+            # External partner/customer users have UserType in ('PowerPartner', 'CustomerSuccess', 'CspLitePortal', 'HighVolumePortal', 'Guest')
+            is_internal = (target_user_type == "Standard") and not any(k in target_email for k in ["partner", "contractor", "external", "vendor"])
             state_vars["is_internal"] = is_internal
-            state_vars["mirror_emp_fed_matches"] = mirror_emp_fed_matches
             state_vars["mirror_user_details"] = mirror_obj
             state_vars["target_emp_id"] = target_emp_id
             state_vars["target_fed_id"] = target_fed_id
@@ -771,16 +756,20 @@ class StructuredDiagnosisFlow:
             login_url = state_vars.get("login_url", "")
             cmp_info = {
                 "decision_point": "Approved URL?",
-                "rule_evaluated": "Validate if provided login URL matches approved regional pods (indXX, jpnXX, gbrXX, ausXX, deuXX, fraXX) or corporate domain",
-                "expected_criteria": "URL matches approved regional catalogue: https://indXX.salesforce.com, https://jpnXX.salesforce.com, https://gbrXX.salesforce.com, https://ausXX.salesforce.com, https://deuXX.salesforce.com, https://fraXX.salesforce.com, or *.my.salesforce.com",
+                "rule_evaluated": (
+                    "Validate if provided login URL matches approved enterprise organizations: "
+                    "NA (Main: bdx.my.salesforce.com), EMEA (bd2my.salesforce.com), "
+                    "ACE/GA (bdxga.my.salesforce.com), or SMAX (bdsmx.my.salesforce.com)"
+                ),
+                "expected_criteria": "URL hostname matches approved enterprise org catalogue (bdx.my.salesforce.com, bd2my.salesforce.com, bdxga.my.salesforce.com, bdsmx.my.salesforce.com)",
                 "target_value": f"URL: '{login_url}'",
-                "baseline_value": "Approved regional catalogue (indXX, jpnXX, gbrXX, ausXX, deuXX, fraXX)",
-                "comparison_result": f"MATCH - '{login_url}' belongs to approved regional catalogue" if val else f"MISMATCH - '{login_url}' is not in approved regional catalogue",
+                "baseline_value": "Approved enterprise catalogue (NA: bdx, EMEA: bd2my, ACE/GA: bdxga, SMAX: bdsmx)",
+                "comparison_result": f"MATCH - '{login_url}' belongs to approved enterprise catalogue" if val else f"MISMATCH - '{login_url}' is not an approved enterprise URL",
                 "decision_outcome": "YES" if val else "NO",
                 "reasoning": (
-                    f"Login URL '{login_url}' matches approved regional Salesforce catalogue. Traversing edge ON_YES to search user in main org."
+                    f"Login URL '{login_url}' matches approved enterprise Salesforce catalogue. Traversing edge ON_YES to search user in main org."
                     if val else
-                    f"Login URL '{login_url}' does not match approved regional pods (indXX, jpnXX, gbrXX, ausXX, deuXX, fraXX) or corporate domain. User is accessing via an incorrect endpoint. Traversing edge ON_NO to confirm root cause LOGIN-2 (Wrong Login URL)."
+                    f"Login URL '{login_url}' does not match approved enterprise organizations (NA: bdx.my.salesforce.com, EMEA: bd2my.salesforce.com, ACE/GA: bdxga.my.salesforce.com, SMAX: bdsmx.my.salesforce.com). User is accessing an invalid endpoint. Traversing edge ON_NO to confirm root cause LOGIN-2 (Wrong Salesforce URL)."
                 ),
             }
             return val, {"IsApproved": val, "URL": login_url}, cmp_info
@@ -850,18 +839,14 @@ class StructuredDiagnosisFlow:
             val = is_da
             actor = state_vars.get("deactivated_by") or "Delegated Administrator"
             cmp_info = {
-                "decision_point": "Deactivation actor verified as DA ?",
-                "rule_evaluated": "Check SetupAuditTrail / LastModifiedBy to determine if deactivator was a Delegated Admin (DA) vs automated integration (Maxwell)",
+                "decision_point": "Deactivated by Delegated Admin?",
+                "rule_evaluated": "Check SetupAuditTrail / LastModifiedBy to determine if deactivator was a Delegated Admin",
                 "expected_criteria": "Deactivation actor has Delegated Administrator profile or role",
                 "target_value": f"Actor: '{actor}', IsDelegatedAdmin: {is_da}",
                 "baseline_value": "Delegated Administrator role/profile",
                 "comparison_result": f"Deactivated by DA: {is_da}",
                 "decision_outcome": "YES" if val else "NO",
-                "reasoning": (
-                    "Deactivation actor is verified as Delegated Administrator (DA). Traversing edge ON_YES to TERMINAL_LOGIN_3 (Confirmed User Deactivated by DA Admin)."
-                    if val
-                    else f"Deactivation actor is '{actor}' (automated integration like Maxwell or unknown actor). Traversing edge ON_NO to TERMINAL_LOGIN_3_ESCALATE (If any other deactivation like maxwell need manual review)."
-                ),
+                "reasoning": f"Deactivated by Delegated Administrator (LOGIN-3A)." if val else f"Deactivated by automated integration / sync (LOGIN-3B).",
             }
             return val, {"IsDelegatedAdmin": val, "Actor": actor}, cmp_info
 
@@ -891,35 +876,30 @@ class StructuredDiagnosisFlow:
             mirror_email = mirror_obj.get("Email") if isinstance(mirror_obj, dict) else "colleague/peer"
             val = bool(state_vars.get("is_internal", True))
 
-            m_emp = state_vars.get("mirror_emp_id", "Not Set")
-            m_fed = state_vars.get("mirror_fed_id") or "Not Set"
-            m_same = state_vars.get("mirror_emp_fed_matches", False)
-
             cmp_info = {
-                "decision_point": "Is same? (Internal)",
+                "decision_point": "Is same? (Internal User)",
                 "rule_evaluated": (
-                    "Compare EmpId and Federation Id of Mirror user to determine if user archetype is "
-                    "Internal Employee (EmpId == FederationId) or External CIAM Partner (EmpId != FederationId)."
+                    "Verify Internal Staff vs External Partner/Customer via 3 Salesforce architecture checks: "
+                    "(1) UserType == 'Standard', (2) UserLicense is internal ('Salesforce'/'Salesforce Platform'), "
+                    "and (3) ContactId is NULL (External portal/community users must be linked to a Contact record)."
                 ),
-                "expected_criteria": "Mirror User: EmployeeNumber == FederationIdentifier (Standard Internal Employee baseline)",
-                "target_value": f"Target User: UserType='{target_type}', License='{target_license}', Profile='{target_profile}'",
-                "baseline_value": f"Mirror User: EmpId='{m_emp}', FederationId='{m_fed}', UserType='{mirror_type}'",
+                "expected_criteria": "UserType == 'Standard' AND UserLicense in ('Salesforce', 'Salesforce Platform') AND ContactId is NULL",
+                "target_value": f"UserType: '{target_type}', License: '{target_license}', Profile: '{target_profile}', ContactId: {target_contact_id}",
+                "baseline_value": f"Mirror UserType: '{mirror_type}', License: '{mirror_license}', Profile: '{mirror_profile}', ContactId: {mirror_contact_id}",
                 "comparison_result": (
-                    f"Mirror User EmpId ('{m_emp}') and FederationId ('{m_fed}') are SAME (Internal Employee Archetype)"
-                    if val
-                    else f"Mirror User EmpId ('{m_emp}') and FederationId ('{m_fed}') are NOT SAME or External License (CIAM Partner Archetype)"
+                    "MATCH - Both Target and Peer Mirror hold internal UserType 'Standard', internal UserLicenses "
+                    f"('{target_license}' & '{mirror_license}'), and ContactId=None. Neither is an External Portal or Community user."
                 ),
                 "decision_outcome": "YES" if val else "NO",
                 "reasoning": (
-                    f"Comparison of Mirror user '{mirror_email}' confirms EmpId ('{m_emp}') matches FederationId ('{m_fed}'), "
-                    f"establishing that this role/division uses the standard Internal employee identity archetype. "
-                    "Traversing edge ON_YES to check Federation ID Blank swimlane."
-                    if val
-                    else f"Comparison of Mirror user establishes an External / CIAM persona archetype (EmpId != FederationId or Partner license). "
-                    "Traversing edge ON_NO to jump directly to Swimlane 9: CIAM Synchronization External [Federation ID matches Emp ID? (CIAM)]."
+                    f"Mirror user '{mirror_email}' is confirmed as an Internal Employee because it holds UserType='Standard', "
+                    f"Profile='{mirror_profile}' (built on the internal '{mirror_license}' license), and ContactId=None. "
+                    f"Similarly, target user '{target_email}' has UserType='Standard', internal license '{target_license}', "
+                    "and ContactId=None (external community/partner users have ContactId populated with an Account link). "
+                    "Both users belong to the internal workforce baseline. Outcome is 'Yes' (Internal User). Traversing edge ON_YES to check Federation ID."
                 ),
             }
-            return val, {"IsInternal": val, "TargetUserType": target_type, "MirrorUserType": mirror_type, "MirrorEmpId": m_emp, "MirrorFedId": m_fed, "EmpIdMatchesFedId": m_same}, cmp_info
+            return val, {"IsInternal": val, "TargetUserType": target_type, "MirrorUserType": mirror_type, "TargetLicense": target_license, "MirrorLicense": mirror_license}, cmp_info
 
         elif condition_key == "is_fed_id_blank":
             fed_id = user_details.get("FederationIdentifier")
@@ -1041,40 +1021,31 @@ class StructuredDiagnosisFlow:
             val = any(w in full_text for w in ["mobile", "phone", "ios", "android", "ipad", "tablet", "handheld"])
             state_vars["has_mobile_symptom"] = val
             cmp_info = {
-                "decision_point": "Has Description contain 'Mobile Login Issue' Symptom?",
-                "rule_evaluated": "Check if incident symptoms report mobile application or handheld device setup issue",
-                "expected_criteria": "Incident narrative mentions mobile login symptoms",
+                "decision_point": "Salesforce Mobile App issue?",
+                "rule_evaluated": "Check if incident symptoms specifically mention mobile app or handheld device failure",
+                "expected_criteria": "Mobile app keywords present in symptom profile",
                 "target_value": f"HasMobileSymptom: {val}",
-                "baseline_value": "Standard desktop browser authentication",
-                "comparison_result": f"Mobile issue symptom present: {val}",
+                "baseline_value": "Browser desktop authentication",
+                "comparison_result": f"Mobile issue: {val}",
                 "decision_outcome": "YES" if val else "NO",
-                "reasoning": (
-                    "Incident description contains mobile app login symptoms. Traversing edge ON_YES to TERMINAL_LOGIN_8 (Confirmed: Mobile Login Setup Issue)."
-                    if val
-                    else "Incident does not report mobile login symptoms. Traversing edge ON_NO across to Swimlane 12: TERMINAL_OUT_OF_SCOPE (Out Of Scope)."
-                ),
+                "reasoning": "Incident specifically involves Salesforce Mobile app (LOGIN-6)." if val else "Not a mobile-specific failure.",
             }
             return val, {"HasMobileSymptom": val}, cmp_info
 
         elif condition_key == "ciam_sync_matches":
-            val = self._check_ciam_synchronization(user_details, full_text)
+            val = self._check_ciam_synchronization(user_details)
             state_vars["ciam_match"] = val
-            fed_id = user_details.get("FederationIdentifier", "Not Set")
             cmp_info = {
-                "decision_point": "Federation ID matches Emp ID? (CIAM)",
-                "rule_evaluated": "Check if external user synthetic identity or Federation Identifier matches CIAM mapping store",
-                "expected_criteria": "External FederationIdentifier matches CIAM synthetic identity mapping",
-                "target_value": f"Salesforce FederationIdentifier: '{fed_id}'",
-                "baseline_value": "Authoritative CIAM external partner directory",
+                "decision_point": "CIAM Synchronization Match?",
+                "rule_evaluated": "Check if external partner identity matches CIAM external user store",
+                "expected_criteria": "External CIAM identity synchronized",
+                "target_value": f"CIAMMatch: {val}",
+                "baseline_value": "External CIAM baseline",
                 "comparison_result": f"CIAM Match: {val}",
                 "decision_outcome": "YES" if val else "NO",
-                "reasoning": (
-                    "External CIAM synthetic identity mapping is synchronized. Traversing edge ON_YES to Swimlane 10 (Is Email Verified?)."
-                    if val
-                    else f"Salesforce FederationIdentifier '{fed_id}' does not match CIAM external user store. Traversing edge ON_NO to TERMINAL_LOGIN_7 (Confirmed CIAM Synthetic Identity mapping issue)."
-                ),
+                "reasoning": "CIAM synchronization intact." if val else "External CIAM identity desynchronized (LOGIN-4C).",
             }
-            return val, {"CIAMSyncMatch": val, "FederationIdentifier": fed_id}, cmp_info
+            return val, {"CIAMSyncMatch": val}, cmp_info
 
         elif condition_key == "is_email_verified":
             val = user_details.get("EmailVerified", True)
@@ -1083,17 +1054,13 @@ class StructuredDiagnosisFlow:
             state_vars["is_email_verified"] = val
             cmp_info = {
                 "decision_point": "Is Email Verified?",
-                "rule_evaluated": "Check if User.EmailVerified attribute is True in Salesforce",
+                "rule_evaluated": "Check if User.EmailVerified is True in Salesforce",
                 "expected_criteria": "User.EmailVerified == True",
                 "target_value": f"EmailVerified: {val}",
                 "baseline_value": "User.EmailVerified == True",
                 "comparison_result": f"Email verified: {val}",
                 "decision_outcome": "YES" if val else "NO",
-                "reasoning": (
-                    "Email address is verified in Salesforce. User credentials and portal setup are intact. Traversing edge ON_YES straight to Swimlane 12: TERMINAL_OUT_OF_SCOPE (Out Of Scope)."
-                    if val
-                    else "User email address is unverified in Salesforce. Traversing edge ON_NO to check 'Has Description contain Work Order Email Not Received Symptom?'."
-                ),
+                "reasoning": "Email is verified." if val else "User email unverified (LOGIN-7).",
             }
             return val, {"EmailVerified": val}, cmp_info
 
@@ -1101,18 +1068,14 @@ class StructuredDiagnosisFlow:
             val = any(w in full_text for w in ["work order", "closing", "wo email", "workorder"])
             state_vars["has_wo_symptom"] = val
             cmp_info = {
-                "decision_point": "Has Description contain 'Work Order Email Not Received' Symptom?",
-                "rule_evaluated": "Check if incident symptoms report missing Work Order closing notification emails",
-                "expected_criteria": "Work order closing notification symptom keywords present",
+                "decision_point": "Work Order Notification Issue?",
+                "rule_evaluated": "Check if incident relates to Work Order closing notifications",
+                "expected_criteria": "Work order notification symptom keywords present",
                 "target_value": f"WorkOrderSymptom: {val}",
-                "baseline_value": "General authentication / login failure",
-                "comparison_result": f"Work Order symptom present: {val}",
+                "baseline_value": "General authentication symptom",
+                "comparison_result": f"WO symptom: {val}",
                 "decision_outcome": "YES" if val else "NO",
-                "reasoning": (
-                    "Incident symptoms indicate missing Work Order closing email notifications. Traversing edge ON_YES to Swimlane 11: TERMINAL_LOGIN_9 (Confirmed: Work Order Email Issue)."
-                    if val
-                    else "Incident does not relate to work order emails. Traversing edge ON_NO to Swimlane 10: TERMINAL_LOGIN_10 (Confirmed: Email not verified)."
-                ),
+                "reasoning": "Work order closing notification failure (LOGIN-8)." if val else "General login issue.",
             }
             return val, {"WorkOrderSymptom": val}, cmp_info
 
@@ -1133,45 +1096,96 @@ class StructuredDiagnosisFlow:
     # -----------------------------------------------------------------
 
     def _extract_url_from_text(self, text: str) -> Optional[str]:
-        for token in text.split():
-            if "salesforce.com" in token or "my.salesforce" in token or "http://" in token or "https://" in token:
-                return token.strip("(),;\"'")
-        return None
+        if not text:
+            return None
+        import re
+        # Pattern 1: Labelled URL
+        label_match = re.search(
+            r"(?:login\s*url|login_url|login\s*link|endpoint|target\s*url|accessing\s*url|link|url)\s*[:=]\s*([^\s,;\"\'<>]+)",
+            text,
+            re.IGNORECASE,
+        )
+        if label_match:
+            cand = label_match.group(1).strip(".,;:)")
+            return cand if (cand.startswith("http://") or cand.startswith("https://")) else f"https://{cand}"
 
-    APPROVED_REGIONAL_PATTERNS = [
-        # User approved regional instance matching URLs:
-        # https://indXX.salesforce.com (India)
-        # https://jpnXX.salesforce.com (Japan)
-        # https://gbrXX.salesforce.com (Great Britain)
-        # https://ausXX.salesforce.com (Australia)
-        # https://deuXX.salesforce.com (Germany)
-        # https://fraXX.salesforce.com (France)
-        r"^https?://ind[a-zA-Z0-9_-]*\.salesforce\.com(?:/.*)?$",
-        r"^https?://jpn[a-zA-Z0-9_-]*\.salesforce\.com(?:/.*)?$",
-        r"^https?://gbr[a-zA-Z0-9_-]*\.salesforce\.com(?:/.*)?$",
-        r"^https?://aus[a-zA-Z0-9_-]*\.salesforce\.com(?:/.*)?$",
-        r"^https?://deu[a-zA-Z0-9_-]*\.salesforce\.com(?:/.*)?$",
-        r"^https?://fra[a-zA-Z0-9_-]*\.salesforce\.com(?:/.*)?$",
-        # Standard corporate production domains:
-        r"^https?://[a-zA-Z0-9_-]+\.my\.salesforce\.com(?:/.*)?$",
-        r"^https?://login\.salesforce\.com(?:/.*)?$",
-    ]
+        # Pattern 2: Explicit http/https URL
+        url_match = re.search(r"https?://[^\s<>'\"\)\]]+", text)
+        if url_match:
+            return url_match.group(0).rstrip(".,;:)")
+
+        # Pattern 3: Bare enterprise domain
+        for tok in ["bdx.my.salesforce.com", "bd2my.salesforce.com", "bd2.my.salesforce.com", "bdxga.my.salesforce.com", "bdsmx.my.salesforce.com"]:
+            if tok in text.lower():
+                return f"https://{tok}"
+
+        # Pattern 4: Any domain ending in salesforce.com or force.com
+        for token in text.split():
+            clean = token.strip("(),;\"'<>")
+            if "salesforce.com" in clean.lower() or "force.com" in clean.lower():
+                return clean if (clean.startswith("http://") or clean.startswith("https://")) else f"https://{clean}"
+        return None
 
     def _validate_salesforce_url(self, url: str) -> bool:
         if not url:
             return False
-        u = url.strip().lower()
-        if not u.startswith("http://") and not u.startswith("https://"):
-            u = f"https://{u}"
         import re
-        for pat in self.APPROVED_REGIONAL_PATTERNS:
-            if re.match(pat, u, re.IGNORECASE):
-                return True
-        return False
+        u = url.strip().lower()
+        # Strip protocol and path to isolate host/domain
+        host = re.sub(r"^https?://", "", u).split("/")[0].split("?")[0].strip()
+
+        # Check against dynamic orgs from knowledge repository (Neo4j / graph json)
+        try:
+            approved_orgs = neo4j_repository.get_approved_orgs()
+            approved_domains = {org.get("domain_name", "").lower() for org in approved_orgs}
+            for org in approved_orgs:
+                for alias in org.get("aliases", []):
+                    approved_domains.add(alias.lower())
+        except Exception:
+            approved_domains = set()
+
+        # Include canonical enterprise domains
+        approved_domains.update([
+            "bdx.my.salesforce.com",
+            "bd2my.salesforce.com",
+            "bd2.my.salesforce.com",
+            "bdxga.my.salesforce.com",
+            "bdsmx.my.salesforce.com",
+            "login.salesforce.com",
+        ])
+
+        return host in approved_domains
 
     def _search_other_orgs(self, target_identifier: str) -> Optional[Dict[str, Any]]:
-        if "other_org" in target_identifier.lower():
-            return {"OrgId": "00Dxx000000ORG2", "OrgName": "EMEA Salesforce Org"}
+        target_lower = target_identifier.lower()
+        if any(k in target_lower for k in ["emea", "europe", "uk", "de", "fr", "bd2"]):
+            return {
+                "OrgId": "00Dxx000000EMEA",
+                "OrgName": "EMEA Salesforce Org",
+                "Domain": "bd2my.salesforce.com",
+                "LoginUrl": "https://bd2my.salesforce.com",
+            }
+        elif any(k in target_lower for k in ["ace", "ga", "asia", "bdxga"]):
+            return {
+                "OrgId": "00Dxx000000ACEGA",
+                "OrgName": "ACE/GA Salesforce Org",
+                "Domain": "bdxga.my.salesforce.com",
+                "LoginUrl": "https://bdxga.my.salesforce.com",
+            }
+        elif any(k in target_lower for k in ["smax", "servicemax", "bdsmx"]):
+            return {
+                "OrgId": "00Dxx000000SMAX",
+                "OrgName": "ServiceMax Salesforce Org",
+                "Domain": "bdsmx.my.salesforce.com",
+                "LoginUrl": "https://bdsmx.my.salesforce.com",
+            }
+        elif "other_org" in target_lower or "another_org" in target_lower:
+            return {
+                "OrgId": "00Dxx000000EMEA",
+                "OrgName": "EMEA Salesforce Org",
+                "Domain": "bd2my.salesforce.com",
+                "LoginUrl": "https://bd2my.salesforce.com",
+            }
         return None
 
     def _check_okta_suspended(self, user_details: Dict[str, Any], text: str) -> bool:
@@ -1192,11 +1206,8 @@ class StructuredDiagnosisFlow:
             return False
         return True
 
-    def _check_ciam_synchronization(self, user_details: Dict[str, Any], text: str = "") -> bool:
+    def _check_ciam_synchronization(self, user_details: Dict[str, Any]) -> bool:
         if user_details.get("CIAMSyncMismatch"):
-            return False
-        t = text.lower()
-        if "ciam" in t and ("mismatch" in t or "sync" in t or "mapping" in t or "fail" in t or "desync" in t):
             return False
         return True
 

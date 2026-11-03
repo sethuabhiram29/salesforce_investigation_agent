@@ -427,6 +427,78 @@ class Neo4jKnowledgeRepository:
             "source": "local_knowledge_graph",
         }
 
+    def get_approved_orgs(self) -> List[Dict[str, Any]]:
+        """Retrieve approved enterprise organizations and their URLs from Neo4j or local graph."""
+        if self._is_connected and self.driver:
+            try:
+                with self.driver.session() as session:
+                    res = session.run("""
+                        MATCH (:Domain {name: 'LOGIN'})-[:HAS_APPROVED_ORG]->(org:SalesforceOrg)
+                        RETURN properties(org) AS org
+                    """)
+                    records = [dict(r["org"]) for r in res]
+                    if records:
+                        return records
+            except Exception as e:
+                logger.warning("Neo4j error in get_approved_orgs: %s", e)
+
+        # Fallback to local graph store
+        graph = self._load_local_flowchart_graph()
+        orgs = graph.get("approved_orgs", [])
+        if orgs:
+            return orgs
+
+        # Static fallback
+        return [
+            {
+                "org_id": "ORG_NA",
+                "name": "NA",
+                "full_name": "North America (Main)",
+                "login_url": "https://bdx.my.salesforce.com",
+                "domain_name": "bdx.my.salesforce.com",
+                "is_main": True,
+            },
+            {
+                "org_id": "ORG_EMEA",
+                "name": "EMEA",
+                "full_name": "Europe, Middle East & Africa",
+                "login_url": "https://bd2my.salesforce.com",
+                "domain_name": "bd2my.salesforce.com",
+                "is_main": False,
+            },
+            {
+                "org_id": "ORG_ACE_GA",
+                "name": "ACE/GA",
+                "full_name": "Asia Central East / Greater Asia",
+                "login_url": "https://bdxga.my.salesforce.com",
+                "domain_name": "bdxga.my.salesforce.com",
+                "is_main": False,
+            },
+            {
+                "org_id": "ORG_SMAX",
+                "name": "SMAX",
+                "full_name": "ServiceMax Operations",
+                "login_url": "https://bdsmx.my.salesforce.com",
+                "domain_name": "bdsmx.my.salesforce.com",
+                "is_main": False,
+            },
+        ]
+
+    def get_main_org(self) -> Dict[str, Any]:
+        """Retrieve the primary/main Salesforce org (NA: bdx.my.salesforce.com)."""
+        orgs = self.get_approved_orgs()
+        for o in orgs:
+            if o.get("is_main"):
+                return o
+        return {
+            "org_id": "ORG_NA",
+            "name": "NA",
+            "full_name": "North America (Main)",
+            "login_url": "https://bdx.my.salesforce.com",
+            "domain_name": "bdx.my.salesforce.com",
+            "is_main": True,
+        }
+
     def close(self) -> None:
         """Close only a driver created by this repository."""
         if self._owns_driver and self.driver is not None:

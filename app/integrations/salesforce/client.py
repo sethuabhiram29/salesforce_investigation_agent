@@ -351,11 +351,13 @@ class SalesforceMCPClient:
             return api_res["searchRecords"]
 
         # Tier 3: Fixture Fallback
-        clean_q = sosl_query.replace("{", "").replace("}", "").lower()
+        import re
+        find_m = re.search(r"find\s*\{([^}]+)\}", sosl_query, re.IGNORECASE)
+        search_term = find_m.group(1).lower().strip() if find_m else sosl_query.lower()
         results = []
         for u in self._working_fixtures:
             for val in [u.get("Username"), u.get("Email"), u.get("FirstName"), u.get("LastName")]:
-                if val and str(val).lower() in clean_q:
+                if val and (str(val).lower() == search_term or str(val).lower() in search_term or (len(search_term) > 3 and search_term in str(val).lower())):
                     results.append(u)
                     break
         return results

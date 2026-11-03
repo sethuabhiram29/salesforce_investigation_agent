@@ -1,7 +1,7 @@
 ---
 title: Incident Classification and Semantic Identity Resolution Skill
-version: 3
-purpose: Contextual triage, domain classification, affected user resolution, and mirror user extraction
+version: 4
+purpose: Contextual triage, domain classification, affected user resolution, mirror user extraction, and enterprise login URL extraction
 ---
 
 # Purpose
@@ -10,6 +10,7 @@ This skill guides the Triage Agent in:
 2. Classifying incidents into one of four investigation domains: **LOGIN**, **OBJECT**, **RECORD**, or **APPLICATION** based on symptom semantics (without premature remediation).
 3. Dynamically identifying the **Affected User** based on sentence context and narrative roles, rather than assuming the ticket caller is the affected party.
 4. Dynamically extracting any **Mirror User** (benchmark/comparison peer) referenced in the ticket to enable differential access analysis.
+5. Dynamically extracting any **Login URL / Endpoint** cited in the narrative to anchor Swimlane 1 ("Wrong Login Url") validation.
 
 ---
 
@@ -84,14 +85,14 @@ Support tickets are written by humans using diverse narrative styles. The agent 
 
 # 3. Dynamic Login URL & Endpoint Extraction
 
-In enterprise Salesforce architectures, login entry points differ depending on whether the user is authenticating against production, a custom MyDomain URL, a developer/UAT sandbox, or a partner community. 
+In enterprise Salesforce architectures, users access different production organizations depending on region and function. 
 
 The Knowledge Graph decision tree anchors on the **Login URL** in Swimlane 1 ("Wrong Login Url") as part of the initial Prompt Result:
 
 ```
 [Prompt Result]
   - Affected User
-  - Problem / Details
+  - Division / LOB
   - Mirror User
   - Login URL
        │
@@ -103,44 +104,35 @@ The Knowledge Graph decision tree anchors on the **Login URL** in Swimlane 1 ("W
        └────────────────────────► (Go to Swimlane 2) ◄──────────(Yes)
 ```
 
-### Extraction Guidelines for Triage Agent:
-1. **Detection Patterns**:
-   - Explicit web URLs: `http://...`, `https://...`
-   - Custom MyDomain URLs: `*.my.salesforce.com`, `*.lightning.force.com`
-   - Sandbox environments: `test.salesforce.com`, `*.sandbox.my.salesforce.com`
-   - Standard portals: `login.salesforce.com`
-2. **Contextual Narrative Extraction**:
-   - Identify when a user cites the exact URL they are browsing to:
-     - *"User cannot sign in at https://acme--test.sandbox.my.salesforce.com"* ➔ Extracted Login URL: `https://acme--test.sandbox.my.salesforce.com`
-     - *"Navigating to test.salesforce.com gives invalid credentials"* ➔ Extracted Login URL: `https://test.salesforce.com`
-     - *"User is using bookmarked URL https://oldportal.my.salesforce.com"* ➔ Extracted Login URL: `https://oldportal.my.salesforce.com`
-### Approved Regional Login URLs & Catalogue:
-The enterprise validates login URLs against approved regional pod instances and corporate production MyDomains:
-- `https://indXX.salesforce.com` (India regional pods, e.g. `ind01.salesforce.com`, `indXX.salesforce.com`)
-- `https://jpnXX.salesforce.com` (Japan regional pods, e.g. `jpn01.salesforce.com`, `jpnXX.salesforce.com`)
-- `https://gbrXX.salesforce.com` (Great Britain regional pods, e.g. `gbr01.salesforce.com`, `gbrXX.salesforce.com`)
-- `https://ausXX.salesforce.com` (Australia regional pods, e.g. `aus01.salesforce.com`, `ausXX.salesforce.com`)
-- `https://deuXX.salesforce.com` (Germany regional pods, e.g. `deu01.salesforce.com`, `deuXX.salesforce.com`)
-- `https://fraXX.salesforce.com` (France regional pods, e.g. `fra01.salesforce.com`, `fraXX.salesforce.com`)
-- Corporate MyDomain production instances: `*.my.salesforce.com`
-- Standard corporate entry: `https://login.salesforce.com`
+### Approved Enterprise Organizations and Canonical URLs:
+The enterprise recognizes four canonical Salesforce organizations:
+1. **North America (NA) - Primary / Main Org**: `https://bdx.my.salesforce.com` (Domain: `bdx.my.salesforce.com`)
+2. **Europe, Middle East & Africa (EMEA)**: `https://bd2my.salesforce.com` (Domain: `bd2my.salesforce.com`, alias: `bd2.my.salesforce.com`)
+3. **Asia Central East / Greater Asia (ACE/GA)**: `https://bdxga.my.salesforce.com` (Domain: `bdxga.my.salesforce.com`)
+4. **ServiceMax (SMAX)**: `https://bdsmx.my.salesforce.com` (Domain: `bdsmx.my.salesforce.com`)
 
-If the incident narrative cites an approved regional URL or corporate MyDomain, `Approved URL?` evaluates to **`YES`** and diagnosis proceeds to Swimlane 2 (User presence in main org).
-If an unapproved URL is cited (such as `test.salesforce.com` or an invalid pod), `Approved URL?` evaluates to **`NO`** and locks root cause **`LOGIN-2 (Wrong Salesforce URL)`**.
-
-### Absence of Custom URL:
-- If the ticket does not mention any explicit login URL, hostname, or website link, assign `login_url = None`.
-- The diagnosis engine evaluates `Login URLs Provided?` as **`NO`** and traverses directly to Swimlane 2 (`Search user in main org`).
+### Extraction Rules for Triage Agent:
+1. **Extract Any Cited URL or Endpoint**:
+   - The Triage Agent must extract whatever endpoint or URL the user mentions, whether valid or invalid.
+   - Do NOT discard non-Salesforce URLs (e.g. `https://wrong-portal.com`, `http://invalid.sso.org`). Swimlane 1 requires invalid URLs to confirm **LOGIN-2 (Wrong Salesforce URL)**.
+2. **Extraction Patterns**:
+   - **Labelled Patterns**: `Login URL: ...`, `URL: ...`, `Endpoint: ...`, `Link: ...`, `Site: ...`
+   - **Explicit URLs**: Any web URL starting with `http://` or `https://`
+   - **Enterprise Domains**: `bdx.my.salesforce.com`, `bd2my.salesforce.com`, `bdxga.my.salesforce.com`, `bdsmx.my.salesforce.com`, or any `*.salesforce.com` / `*.force.com` domain.
+   - **Contextual Phrases**: "accessing <endpoint>", "navigating to <url>", "logging in at <url>".
+3. **Absence of URL**:
+   - If the incident narrative contains no URL or endpoint, assign `login_url = None`.
+   - The decision engine evaluates `Login URLs Provided?` as **`NO`** and proceeds directly to Swimlane 2 (`Search User in main org`).
 
 ---
 
 # 4. Canonical Login Knowledge Graph Swimlanes (12 Swimlanes)
 
 The Knowledge Graph decomposes all login investigations into 12 structured swimlanes:
-1. **Wrong Login Url**: Ingests Triage Result (`Affected User`, `Division / LOB`, `Mirror User`, `Login URL`). Evaluates `Login URLs Provided?` and validates against approved regional catalogue (`indXX`, `jpnXX`, `gbrXX`, `ausXX`, `deuXX`, `fraXX`). Confirms **LOGIN-2** on failure.
-2. **User not found in any org**: Searches primary org. If missing, queries secondary orgs (EMEA, GA, ServiceMax, RIM). Confirms **LOGIN-1** (User not found).
-3. **User found in another org**: Confirms **LOGIN-1B** if user account is located in an alternate corporate org.
-4. **User Deactivation**: Checks `IsActive`. If `False`, inspects Setup Audit Trail. Confirms **LOGIN-3** if deactivated by Delegated Administrator (DA); escalates to **LOGIN-3-ESCALATE** (`If any other deactivation like maxwell need manual review`) if deactivated by Maxwell/automated integration.
+1. **Wrong Login Url**: Ingests Triage Result (`Affected User`, `Division / LOB`, `Mirror User`, `Login URL`). Evaluates `Login URLs Provided?` and validates against approved enterprise orgs (`bdx`, `bd2my`, `bdxga`, `bdsmx`). Confirms **LOGIN-2** on unapproved URL.
+2. **User not found in any org**: Searches primary org (`bdx.my.salesforce.com`). If missing, queries secondary orgs (EMEA, ACE/GA, SMAX). Confirms **LOGIN-1** (User not found) if absent from all orgs.
+3. **User found in another org**: Confirms **LOGIN-1B** if user account is located in an alternate corporate org (EMEA `bd2my`, ACE/GA `bdxga`, or SMAX `bdsmx`).
+4. **User Deactivation**: Checks `IsActive`. If `False`, inspects Setup Audit Trail. Confirms **LOGIN-3** if deactivated by Delegated Administrator (DA); escalates to **LOGIN-3-ESCALATE** (`If any other deactivation like mulesoft need human review`) if deactivated by automated integration.
 5. **Federation ID Missing**: Fetches Mirror User and performs `Compare EmpId and Federation Id of Mirror user`. Evaluates `Is same? (Internal)`:
    - If `YES` (Internal archetype where EmpId == FedId): Checks `Federation ID Blank?` -> Confirms **LOGIN-4** if missing.
    - If `NO` (External / CIAM archetype): Jumps directly across Swimlanes 6-8 into Swimlane 9 (`CIAM Synchronization External`).
