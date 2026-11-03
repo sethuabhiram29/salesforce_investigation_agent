@@ -6,12 +6,13 @@
   "nodes": [
     {
       "id": "NODE_TRIAGE_RESULT",
-      "name": "Triage Result Ingestion",
+      "name": "Prompt Result (LOGIN Domain): Affected User, Division/LOB, Mirror User, Login URL",
       "swimlane": "Wrong Login Url",
       "type": "action",
       "action_type": "ingest_triage",
       "tool_name": "TriageNarrativeParser",
-      "description": "Ingest ticket parameters, domain, mirror user, and affected user identity from Triage stage"
+      "description": "Initial entry point for LOGIN domain decision tree: Ingests Prompt Result containing Affected User, Division / LOB, Mirror User, and Login URL",
+      "domain": "LOGIN"
     },
     {
       "id": "NODE_LOGIN_URL_PROVIDED",

@@ -108,8 +108,9 @@ def ingest_flowchart_into_neo4j(
                     n.action_type = r.action_type,
                     n.tool_name = r.tool_name,
                     n.description = r.description,
-                    n.node_type = 'action'
-            """, rows=action_nodes)
+                    n.node_type = 'action',
+                    n.domain = $domain
+            """, rows=action_nodes, domain=domain_name)
 
         if decision_nodes:
             session.run("""
@@ -119,8 +120,9 @@ def ingest_flowchart_into_neo4j(
                     n.swimlane = r.swimlane,
                     n.condition_key = r.condition_key,
                     n.description = r.description,
-                    n.node_type = 'decision'
-            """, rows=decision_nodes)
+                    n.node_type = 'decision',
+                    n.domain = $domain
+            """, rows=decision_nodes, domain=domain_name)
 
         if terminal_nodes:
             session.run("""
@@ -133,8 +135,9 @@ def ingest_flowchart_into_neo4j(
                     n.decision_basis = r.decision_basis,
                     n.expected_criteria = r.expected_criteria,
                     n.skill_file = r.skill_file,
-                    n.node_type = 'terminal'
-            """, rows=terminal_nodes)
+                    n.node_type = 'terminal',
+                    n.domain = $domain
+            """, rows=terminal_nodes, domain=domain_name)
 
         # 4. Merge Edges
         edges = graph_data.get("edges", [])
