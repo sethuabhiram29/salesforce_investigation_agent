@@ -1,84 +1,71 @@
 ---
 issue_code: LOGIN-1
-title: User Account Not Available
+title: User Account Not Available Across Enterprise Organizations
 domains:
   - LOGIN
-version: 1
+version: 2
 ---
 
 # Purpose
-The caller cannot sign in because no Salesforce user record exists for them. Applies when the incident reports a missing or unknown account, and when ambiguous access incidents ("can't access Salesforce") have a user lookup that returns no match.
-
-Does not apply when a user record is found (use LOGIN-3, LOGIN-4 or other skills).
+The caller cannot sign in because no Salesforce user record exists for them across registered corporate organizations. Applies when:
+1. The incident reports a missing or unknown user account, and cross-org user lookups return zero matches.
+2. An unapproved URL was used, and subsequent verification confirms the user has no provisioned account in the Main Organization.
+3. A cross-org or Main Org URL was used, but the user does not exist in any registered organization (NA, EMEA, ACE/GA, ServiceMax).
 
 # Diagnosis
 ## Required evidence
-- Caller identity from ServiceNow: at least one of Federation ID, email, username (or employee number).
-- Result of user search in the SFDC NA org.
-- Result of the same search in each other org: EMEA, GA, ServiceMax, RIM.
+- Caller identity from ServiceNow: at least one of Federation ID, email, username, or employee number.
+- Result of user search in the primary Main Org (NA: `bdx.my.salesforce.com`).
+- Result of user search across secondary organizations: EMEA (`bd2my.salesforce.com`), ACE/GA (`bdxga.my.salesforce.com`), and ServiceMax (`bdsmx.my.salesforce.com`).
 
 ## Investigation procedure
-1. Retrieve the incident (`servicenow_get_incident`) and read `caller_id`.
-2. Resolve the caller's profile (`servicenow_get_user`) to obtain Federation ID / email / username / employee number.
-3. Search the SFDC NA org by those identifiers (global-search equivalent).
-4. If not found, repeat the search in EMEA, GA, ServiceMax and RIM, one org at a time.
-5. Record each search as evidence, including the identifier used and the org searched.
+1. Retrieve incident and resolve caller profile to obtain target email, username, and employee ID.
+2. Search the primary North America Salesforce instance (`bdx.my.salesforce.com`).
+3. If not found in Main Org, repeat search across secondary organizations (EMEA, ACE/GA, ServiceMax), recording search results per organization.
+4. If an unapproved URL was cited in the incident, verify if the user exists in the Main Organization before concluding. If absent from the Main Org as well, classify under this skill.
 
 ## Permitted diagnostic tools
 - ServiceNow: retrieve incident, retrieve user (read-only).
-- Salesforce: user search per org (read-only).
-- Historical incidents and knowledge graph lookups (read-only, context only).
+- Salesforce: user search per org (`salesforce_user_search`, `cross_org_user_search`).
+- Historical incidents and knowledge graph lookups (read-only).
 
 ## Confirmation criteria
-Confirmed only when ALL hold:
-- A usable caller identifier was obtained.
-- Searches completed successfully (no tool error) in NA, EMEA, GA, ServiceMax and RIM.
-- Every search returned zero matching users.
+Confirmed only when:
+- Caller identifier was resolved.
+- Searches completed successfully across all registered organizations (NA, EMEA, ACE/GA, ServiceMax).
+- Every search confirmed zero matching users (account is absent everywhere), OR user used an unapproved URL and is absent from Main Org.
 
 ## Alternative explanations
-- Identifier differs from the one stored in Salesforce (name change, alias, typo): retry with each other available identifier before concluding.
-- Multiple matches: status `ambiguous_identity`, do not choose one.
-- User exists in NA but is inactive: switch to LOGIN-3.
-- User exists but Federation ID is missing or mismatched: switch to LOGIN-4.
-
-## Insufficient-evidence behavior
-- A failed or timed-out search is NOT evidence of absence. Report `insufficient_evidence`.
-- Missing caller identifiers: request clarification or escalate; never invent identifiers.
-- Not all five orgs searched: do not confirm.
+- User exists in Main Org (NA): investigate account deactivation (LOGIN-3) or Federation ID (LOGIN-4 / LOGIN-6).
+- User exists in another organization (EMEA / ACE/GA / ServiceMax): route per LOGIN-1B.
+- User exists in Main Org but used an unapproved URL: route per LOGIN-2.
 
 # Resolution
 ## Required confirmed diagnosis
-`status: confirmed`, `issue_code: LOGIN-1`, with evidence refs for all five org searches.
+`status: confirmed`, `issue_code: LOGIN-1`, with evidence references for all organizations checked.
 
 ## Remediation procedure
-No Salesforce write is permitted. The outcome is a documented finding and hand-off:
-1. Add a work note to the incident listing the identifiers and orgs searched, with results.
-2. Proceed with onboarding/provisioning follow-up per the team's process (user needs an account created via the standard request route).
-3. Route or notify as the incident process requires.
+No Salesforce metadata mutation is permitted (account creation requires standard HR/IT onboarding).
+1. Add a comprehensive work note to the ServiceNow incident detailing:
+   - The user identifiers checked (email, employee ID).
+   - The complete list of Salesforce organizations searched (NA `bdx`, EMEA `bd2my`, ACE/GA `bdxga`, SMAX `bdsmx`) and the zero-match verification outcome.
+2. Inform the user in ticket communication that no active account was located in any enterprise Salesforce organization, and that a formal **Salesforce User Provisioning Request (RITM)** must be submitted in ServiceNow to obtain access.
+3. Reassign and reroute the incident ticket to the **HCL Service Desk** assignment group for provisioning assistance and fulfillment.
 
 ## Preconditions and permitted operations
-- Permitted: ServiceNow work note, permitted incident field updates.
-- Prohibited: creating or modifying Salesforce users.
-
-## Expected result
-Incident documents that the user does not exist in any org, with next-step guidance to the requester or owning team.
-
-## Failure and rollback handling
-No Salesforce change to roll back. If the work note fails, retry once, then escalate.
+- Permitted: ServiceNow work note update, incident customer notification, assignment group reassignment to HCL Service Desk.
+- Prohibited: direct creation of user records in Salesforce without an approved RITM.
 
 # HITL
-- Approval required: no Salesforce write exists. Approval only if policy requires it before closing or reassigning the incident.
-- Present to approver (if invoked): incident ID, identifiers searched, per-org search results, proposed incident update.
-- Valid approval: explicit, tied to the specific incident update proposal.
+- Approval required: only if policy mandates approval for cross-department incident rerouting. No Salesforce writes involved.
+- Present to operator: Incident ID, organizations searched, verification results, target assignment group (HCL Service Desk).
+- Valid approval: Explicit confirmation to notify user and reroute to HCL Service Desk.
 
 # Verification
-- Expected state: work note recorded on the incident with the search evidence.
-- Checks: re-read the incident and confirm the note and any field updates exist.
-- Failure and escalation: if the note is missing, or a later search finds the user, reopen Diagnosis (user may have been provisioned in the meantime).
+- Expected state: Incident contains complete cross-org search work note, user notification regarding RITM submission, and reassignment to HCL Service Desk.
+- Checks: Re-query ServiceNow incident to confirm work note and assignment group updates.
 
 # Safety Rules
 - Never invent evidence or user identifiers.
-- Never treat historical similarity as proof.
-- Never execute unauthorized changes.
-- Escalate when evidence or authorization is insufficient.
-- Never conclude "user not present" from a tool error or an empty response with an error status.
+- Never conclude a user is absent from a tool error or timeout.
+- Never directly create user accounts in production without an authorized RITM workflow.

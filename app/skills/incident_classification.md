@@ -1,7 +1,7 @@
 ---
 title: Incident Classification and Semantic Identity Resolution Skill
-version: 4
-purpose: Contextual triage, domain classification, affected user resolution, mirror user extraction, and enterprise login URL extraction
+version: 5
+purpose: Contextual triage, domain classification, affected user resolution, mirror user extraction, and enterprise multi-org URL/identity verification
 ---
 
 # Purpose
@@ -10,7 +10,7 @@ This skill guides the Triage Agent in:
 2. Classifying incidents into one of four investigation domains: **LOGIN**, **OBJECT**, **RECORD**, or **APPLICATION** based on symptom semantics (without premature remediation).
 3. Dynamically identifying the **Affected User** based on sentence context and narrative roles, rather than assuming the ticket caller is the affected party.
 4. Dynamically extracting any **Mirror User** (benchmark/comparison peer) referenced in the ticket to enable differential access analysis.
-5. Dynamically extracting any **Login URL / Endpoint** cited in the narrative to anchor Swimlane 1 ("Wrong Login Url") validation.
+5. Dynamically extracting any **Login URL / Endpoint** cited in the narrative to anchor Swimlane 1 ("Wrong Login Url") and cross-organization user verification.
 
 ---
 
@@ -26,6 +26,7 @@ Analyze the symptom reported by the user, the stage of their interaction with Sa
   - Federation ID mismatches or missing federation values.
   - Deactivated or locked out user accounts.
   - Accessing via wrong or outdated custom URLs / non-production domains.
+  - Cross-organization misdirection (Main Org employee using regional URL or vice-versa).
   - Salesforce Mobile App authentication failures.
 
 ### B. OBJECT Domain
@@ -83,56 +84,54 @@ Support tickets are written by humans using diverse narrative styles. The agent 
 
 ---
 
-# 3. Dynamic Login URL & Endpoint Extraction
+# 3. Dynamic Multi-Org Login URL & User Existence Architecture
 
 In enterprise Salesforce architectures, users access different production organizations depending on region and function. 
 
-The Knowledge Graph decision tree anchors on the **Login URL** in Swimlane 1 ("Wrong Login Url") as part of the initial Prompt Result:
-
-```
-[Prompt Result]
-  - Affected User
-  - Division / LOB
-  - Mirror User
-  - Login URL
-       │
-       ▼
-[Login URL Provided?] ───(Yes)───► [Validate Login URL] ───(Approved URL?)
-       │                                                         │
-      (No)                                                     (No) ──► Confirmed: Wrong Salesforce URL (LOGIN-2)
-       │                                                         │
-       └────────────────────────► (Go to Swimlane 2) ◄──────────(Yes)
-```
-
 ### Approved Enterprise Organizations and Canonical URLs:
-The enterprise recognizes four canonical Salesforce organizations:
 1. **North America (NA) - Primary / Main Org**: `https://bdx.my.salesforce.com` (Domain: `bdx.my.salesforce.com`)
 2. **Europe, Middle East & Africa (EMEA)**: `https://bd2my.salesforce.com` (Domain: `bd2my.salesforce.com`, alias: `bd2.my.salesforce.com`)
 3. **Asia Central East / Greater Asia (ACE/GA)**: `https://bdxga.my.salesforce.com` (Domain: `bdxga.my.salesforce.com`)
 4. **ServiceMax (SMAX)**: `https://bdsmx.my.salesforce.com` (Domain: `bdsmx.my.salesforce.com`)
 
-### Extraction Rules for Triage Agent:
-1. **Extract Any Cited URL or Endpoint**:
-   - The Triage Agent must extract whatever endpoint or URL the user mentions, whether valid or invalid.
-   - Do NOT discard non-Salesforce URLs (e.g. `https://wrong-portal.com`, `http://invalid.sso.org`). Swimlane 1 requires invalid URLs to confirm **LOGIN-2 (Wrong Salesforce URL)**.
-2. **Extraction Patterns**:
-   - **Labelled Patterns**: `Login URL: ...`, `URL: ...`, `Endpoint: ...`, `Link: ...`, `Site: ...`
-   - **Explicit URLs**: Any web URL starting with `http://` or `https://`
-   - **Enterprise Domains**: `bdx.my.salesforce.com`, `bd2my.salesforce.com`, `bdxga.my.salesforce.com`, `bdsmx.my.salesforce.com`, or any `*.salesforce.com` / `*.force.com` domain.
-   - **Contextual Phrases**: "accessing <endpoint>", "navigating to <url>", "logging in at <url>".
-3. **Absence of URL**:
-   - If the incident narrative contains no URL or endpoint, assign `login_url = None`.
-   - The decision engine evaluates `Login URLs Provided?` as **`NO`** and proceeds directly to Swimlane 2 (`Search User in main org`).
+### Cross-Organization Decision Tree:
+```
+                                 [Login URL Evaluated]
+                                           │
+         ┌─────────────────────────────────┼──────────────────────────────────┐
+         ▼                                 ▼                                  ▼
+[1. Unapproved URL]             [2. Main Org URL (bdx)]            [3. Cross-Org URL (bd2/bdxga/bdsmx)]
+         │                                 │                                  │
+Check User in Main Org            Check User in Main Org             Check User in THAT Cross-Org
+         │                                 │                                  │
+ ┌───────┴───────┐                 ┌───────┴───────┐                  ┌───────┴───────┐
+ │               │                 │               │                  │               │
+ ▼               ▼                 ▼               ▼                  ▼               ▼
+User Exists:    User Missing:     User Exists:    User Missing:      User Exists:    User Missing:
+Main cause is   No account        Right URL.      Check other orgs.  Belongs here.   CHECK MAIN ORG!
+wrong URL.      anyway.           Proceed with    If in EMEA/ACE ➔   Reroute to      If in Main Org ➔
+Provide bdx     Advise RITM       deep login      give that URL &    regional        "You are Main Org,
+URL & verify    via HCL           investigation   reroute.           team.           use bdx URL!"
+via Verifier.   Service Desk.     (Active/FedID). If in none ➔ RITM.                 If in other ➔ give URL
+                                                                                     If in none ➔ RITM.
+```
+
+### Universal Rule for "User Not Found / None" Cases:
+Across all paths, if an affected user cannot be located in the required organization or in any registered corporate organization:
+1. Document the list of organizations searched in the ServiceNow work notes.
+2. Inform the user that an active account does not exist and a formal **Salesforce User Provisioning Request (RITM)** must be raised.
+3. Reroute the ticket to the **HCL Service Desk** for fulfillment.
 
 ---
 
 # 4. Canonical Login Knowledge Graph Swimlanes (12 Swimlanes)
 
-The Knowledge Graph decomposes all login investigations into 12 structured swimlanes:
-1. **Wrong Login Url**: Ingests Triage Result (`Affected User`, `Division / LOB`, `Mirror User`, `Login URL`). Evaluates `Login URLs Provided?` and validates against approved enterprise orgs (`bdx`, `bd2my`, `bdxga`, `bdsmx`). Confirms **LOGIN-2** on unapproved URL.
-2. **User not found in any org**: Searches primary org (`bdx.my.salesforce.com`). If missing, queries secondary orgs (EMEA, ACE/GA, SMAX). Confirms **LOGIN-1** (User not found) if absent from all orgs.
-3. **User found in another org**: Confirms **LOGIN-1B** if user account is located in an alternate corporate org (EMEA `bd2my`, ACE/GA `bdxga`, or SMAX `bdsmx`).
-4. **User Deactivation**: Checks `IsActive`. If `False`, inspects Setup Audit Trail. Confirms **LOGIN-3** if deactivated by Delegated Administrator (DA); escalates to **LOGIN-3-ESCALATE** (`If any other deactivation like mulesoft need human review`) if deactivated by automated integration.
+1. **Wrong Login Url**: Ingests Triage Result (`Affected User`, `Division / LOB`, `Mirror User`, `Login URL`). Evaluates `Login URLs Provided?` and validates against approved enterprise orgs (`bdx`, `bd2my`, `bdxga`, `bdsmx`).
+   - If unapproved: checks user in Main Org. If user exists ➔ confirms **LOGIN-2**; if missing ➔ routes to **LOGIN-1** (RITM via HCL Service Desk).
+   - If cross-org: checks user in secondary org and Main Org. If Main Org user used cross-org link ➔ confirms **LOGIN-2**; if user exists in regional org ➔ confirms **LOGIN-1B** (regional scope).
+2. **User not found in any org**: Searches primary org (`bdx.my.salesforce.com`). If missing, queries secondary orgs (EMEA, ACE/GA, SMAX). Confirms **LOGIN-1** (User not found) if absent from all orgs; advises RITM and reroutes to HCL Service Desk.
+3. **User found in another org**: Confirms **LOGIN-1B** if user account is located in an alternate corporate org (EMEA `bd2my`, ACE/GA `bdxga`, or SMAX `bdsmx`). Documents approved regional URL and reroutes to regional team.
+4. **User Deactivation**: Checks `IsActive`. If `False`, inspects Setup Audit Trail. Confirms **LOGIN-3** if deactivated by Delegated Administrator (DA); escalates to **LOGIN-3-ESCALATE** if deactivated by automated integration (Mulesoft/Workday).
 5. **Federation ID Missing**: Fetches Mirror User and performs `Compare EmpId and Federation Id of Mirror user`. Evaluates `Is same? (Internal)`:
    - If `YES` (Internal archetype where EmpId == FedId): Checks `Federation ID Blank?` -> Confirms **LOGIN-4** if missing.
    - If `NO` (External / CIAM archetype): Jumps directly across Swimlanes 6-8 into Swimlane 9 (`CIAM Synchronization External`).

@@ -195,7 +195,7 @@
       "type": "terminal",
       "status": "confirmed",
       "issue_code": "LOGIN-2",
-      "decision_basis": "User is attempting to authenticate through unapproved or incorrect Salesforce URL.",
+      "decision_basis": "User account exists in Main Org, but attempted to access via an unapproved or incorrect URL. Provide official Main Org URL (https://bdx.my.salesforce.com) and verify resolution.",
       "expected_criteria": "Login via approved company MyDomain URL",
       "skill_file": "LOGIN-2-wrong-login-url.md"
     },
@@ -206,7 +206,7 @@
       "type": "terminal",
       "status": "confirmed",
       "issue_code": "LOGIN-1",
-      "decision_basis": "No account provisioned for user in primary org or any auxiliary Salesforce org.",
+      "decision_basis": "User account could not be located in primary org or any registered secondary org. A user provisioning request (RITM) must be raised in ServiceNow; rerouting ticket to HCL Service Desk.",
       "expected_criteria": "User account exists in Salesforce",
       "skill_file": "LOGIN-1-user-account-not-available.md"
     },
@@ -217,9 +217,9 @@
       "type": "terminal",
       "status": "confirmed",
       "issue_code": "LOGIN-1B",
-      "decision_basis": "User account was located in alternate enterprise organization.",
+      "decision_basis": "User account was located in an alternate enterprise organization. Update work notes with identified org and approved login URL, and reroute to dedicated regional support team.",
       "expected_criteria": "User account provisioned in Primary Org",
-      "skill_file": "LOGIN-1-user-account-not-available.md"
+      "skill_file": "LOGIN-1B-user-found-in-another-org.md"
     },
     {
       "id": "TERMINAL_LOGIN_3",
@@ -330,45 +330,325 @@
       "decision_basis": "User verified active with valid credentials, verified email, and valid Federation ID. No canonical login issue matched flowchart criteria. Routing to Tier-2 engineering.",
       "expected_criteria": "Standard canonical diagnostic pattern",
       "skill_file": null
+    },
+    {
+      "id": "NODE_CHECK_USER_UNAPPROVED_URL",
+      "name": "Check User Existence for Unapproved URL",
+      "swimlane": "Wrong Login Url",
+      "type": "action",
+      "action_type": "check_user_unapproved_url",
+      "tool_name": "salesforce_user_search",
+      "description": "Verify if the user account exists in the Main Salesforce Organization despite using an unapproved URL"
+    },
+    {
+      "id": "NODE_USER_EXISTS_UNAPPROVED_URL",
+      "name": "User Exists in Main Org? (Unapproved URL)",
+      "swimlane": "Wrong Login Url",
+      "type": "decision",
+      "condition_key": "user_exists_in_main_org",
+      "description": "Determine if user account exists in Main Org (NA) when an unapproved URL was used"
+    },
+    {
+      "id": "NODE_IS_MAIN_ORG_URL",
+      "name": "Provided URL Belongs to Main Org?",
+      "swimlane": "Wrong Login Url",
+      "type": "decision",
+      "condition_key": "is_main_org_url",
+      "description": "Determine whether the approved URL belongs to the Main Organization (NA: bdx) or a secondary cross-org"
+    },
+    {
+      "id": "NODE_SEARCH_PROVIDED_CROSS_ORG",
+      "name": "Search User in Provided Secondary Org",
+      "swimlane": "User found in another org",
+      "type": "action",
+      "action_type": "search_user_provided_org",
+      "tool_name": "cross_org_user_search",
+      "description": "Search the specific secondary organization (EMEA/ACE/SMAX) corresponding to the provided approved URL"
+    },
+    {
+      "id": "NODE_USER_FOUND_IN_PROVIDED_ORG",
+      "name": "User Exists in Provided Secondary Org?",
+      "swimlane": "User found in another org",
+      "type": "decision",
+      "condition_key": "user_found_in_provided_org",
+      "description": "Evaluate if the user account exists in the specific organization associated with the provided URL"
+    },
+    {
+      "id": "NODE_SEARCH_MAIN_FROM_CROSS",
+      "name": "Search Main Org for Misdirected User",
+      "swimlane": "User found in another org",
+      "type": "action",
+      "action_type": "search_main_from_cross",
+      "tool_name": "salesforce_user_search",
+      "description": "Search Main Org (NA) to verify if a user who entered a cross-org URL actually belongs to the Main Org"
+    },
+    {
+      "id": "NODE_USER_FOUND_MAIN_FROM_CROSS",
+      "name": "User Exists in Main Org? (Cross-Org Link)",
+      "swimlane": "User found in another org",
+      "type": "decision",
+      "condition_key": "user_found_main_from_cross",
+      "description": "Evaluate if user who entered a cross-org URL actually holds an account in the Main Organization (NA)"
+    },
+    {
+      "id": "TERMINAL_LOGIN_REGIONAL_SCOPE",
+      "name": "Confirmed Regional Org Scope (Reroute)",
+      "swimlane": "User found in another org",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-1B",
+      "decision_basis": "User account exists in the regional organization matching the provided URL. Ticket falls under dedicated regional team scope; rerouted to regional support team.",
+      "expected_criteria": "User account in regional organization",
+      "skill_file": "LOGIN-1B-user-found-in-another-org.md"
+    },
+    {
+      "id": "TERMINAL_LOGIN_2C",
+      "name": "Confirmed Main Org User Used Cross-Org URL",
+      "swimlane": "Wrong Login Url",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-2",
+      "decision_basis": "User account exists in Main Org (NA), but user attempted to log in using a cross-org endpoint. Provide official Main Org URL (https://bdx.my.salesforce.com).",
+      "expected_criteria": "User accesses Main Org URL (bdx.my.salesforce.com)",
+      "skill_file": "LOGIN-2-wrong-login-url.md"
     }
   ],
   "edges": [
-    { "from": "NODE_TRIAGE_RESULT", "to": "NODE_LOGIN_URL_PROVIDED", "type": "TRANSITIONS_TO" },
-    { "from": "NODE_LOGIN_URL_PROVIDED", "to": "NODE_VALIDATE_LOGIN_URL", "type": "ON_YES" },
-    { "from": "NODE_LOGIN_URL_PROVIDED", "to": "NODE_SEARCH_MAIN_ORG", "type": "ON_NO" },
-    { "from": "NODE_VALIDATE_LOGIN_URL", "to": "NODE_APPROVED_URL", "type": "TRANSITIONS_TO" },
-    { "from": "NODE_APPROVED_URL", "to": "NODE_SEARCH_MAIN_ORG", "type": "ON_YES" },
-    { "from": "NODE_APPROVED_URL", "to": "TERMINAL_LOGIN_2", "type": "ON_NO" },
-    { "from": "NODE_SEARCH_MAIN_ORG", "to": "NODE_USER_FOUND_MAIN", "type": "TRANSITIONS_TO" },
-    { "from": "NODE_USER_FOUND_MAIN", "to": "NODE_FETCH_SF_USER", "type": "ON_YES" },
-    { "from": "NODE_USER_FOUND_MAIN", "to": "NODE_SEARCH_OTHER_ORGS", "type": "ON_NO" },
-    { "from": "NODE_SEARCH_OTHER_ORGS", "to": "NODE_USER_FOUND_OTHER", "type": "TRANSITIONS_TO" },
-    { "from": "NODE_USER_FOUND_OTHER", "to": "TERMINAL_LOGIN_1B", "type": "ON_YES" },
-    { "from": "NODE_USER_FOUND_OTHER", "to": "TERMINAL_LOGIN_1", "type": "ON_NO" },
-    { "from": "NODE_FETCH_SF_USER", "to": "NODE_IS_ACTIVE", "type": "TRANSITIONS_TO" },
-    { "from": "NODE_IS_ACTIVE", "to": "NODE_FETCH_MIRROR_USER", "type": "ON_YES" },
-    { "from": "NODE_IS_ACTIVE", "to": "NODE_RETRIEVE_DEACT_AUDIT", "type": "ON_NO" },
-    { "from": "NODE_RETRIEVE_DEACT_AUDIT", "to": "NODE_DEACT_ACTOR_DA", "type": "TRANSITIONS_TO" },
-    { "from": "NODE_DEACT_ACTOR_DA", "to": "TERMINAL_LOGIN_3", "type": "ON_YES" },
-    { "from": "NODE_DEACT_ACTOR_DA", "to": "TERMINAL_LOGIN_3_ESCALATE", "type": "ON_NO" },
-    { "from": "NODE_FETCH_MIRROR_USER", "to": "NODE_COMPARE_EMP_FED_ID", "type": "TRANSITIONS_TO" },
-    { "from": "NODE_COMPARE_EMP_FED_ID", "to": "NODE_IS_INTERNAL_USER", "type": "TRANSITIONS_TO" },
-    { "from": "NODE_IS_INTERNAL_USER", "to": "NODE_FED_ID_BLANK", "type": "ON_YES" },
-    { "from": "NODE_IS_INTERNAL_USER", "to": "NODE_CIAM_SYNC_MATCH", "type": "ON_NO" },
-    { "from": "NODE_FED_ID_BLANK", "to": "TERMINAL_LOGIN_4", "type": "ON_YES" },
-    { "from": "NODE_FED_ID_BLANK", "to": "NODE_OKTA_SUSPENDED", "type": "ON_NO" },
-    { "from": "NODE_OKTA_SUSPENDED", "to": "TERMINAL_LOGIN_5", "type": "ON_YES" },
-    { "from": "NODE_OKTA_SUSPENDED", "to": "NODE_AZURE_WORKDAY_MATCH", "type": "ON_NO" },
-    { "from": "NODE_AZURE_WORKDAY_MATCH", "to": "NODE_MOBILE_LOGIN_CHECK", "type": "ON_YES" },
-    { "from": "NODE_AZURE_WORKDAY_MATCH", "to": "TERMINAL_LOGIN_6", "type": "ON_NO" },
-    { "from": "NODE_MOBILE_LOGIN_CHECK", "to": "TERMINAL_LOGIN_8", "type": "ON_YES" },
-    { "from": "NODE_MOBILE_LOGIN_CHECK", "to": "TERMINAL_OUT_OF_SCOPE", "type": "ON_NO" },
-    { "from": "NODE_CIAM_SYNC_MATCH", "to": "NODE_IS_EMAIL_VERIFIED", "type": "ON_YES" },
-    { "from": "NODE_CIAM_SYNC_MATCH", "to": "TERMINAL_LOGIN_7", "type": "ON_NO" },
-    { "from": "NODE_IS_EMAIL_VERIFIED", "to": "TERMINAL_OUT_OF_SCOPE", "type": "ON_YES" },
-    { "from": "NODE_IS_EMAIL_VERIFIED", "to": "NODE_WO_EMAIL_CHECK", "type": "ON_NO" },
-    { "from": "NODE_WO_EMAIL_CHECK", "to": "TERMINAL_LOGIN_9", "type": "ON_YES" },
-    { "from": "NODE_WO_EMAIL_CHECK", "to": "TERMINAL_LOGIN_10", "type": "ON_NO" }
+    {
+      "from": "NODE_TRIAGE_RESULT",
+      "to": "NODE_LOGIN_URL_PROVIDED",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_LOGIN_URL_PROVIDED",
+      "to": "NODE_VALIDATE_LOGIN_URL",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_LOGIN_URL_PROVIDED",
+      "to": "NODE_SEARCH_MAIN_ORG",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_VALIDATE_LOGIN_URL",
+      "to": "NODE_APPROVED_URL",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_SEARCH_MAIN_ORG",
+      "to": "NODE_USER_FOUND_MAIN",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_USER_FOUND_MAIN",
+      "to": "NODE_FETCH_SF_USER",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_USER_FOUND_MAIN",
+      "to": "NODE_SEARCH_OTHER_ORGS",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_SEARCH_OTHER_ORGS",
+      "to": "NODE_USER_FOUND_OTHER",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_USER_FOUND_OTHER",
+      "to": "TERMINAL_LOGIN_1B",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_USER_FOUND_OTHER",
+      "to": "TERMINAL_LOGIN_1",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_FETCH_SF_USER",
+      "to": "NODE_IS_ACTIVE",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_IS_ACTIVE",
+      "to": "NODE_FETCH_MIRROR_USER",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_IS_ACTIVE",
+      "to": "NODE_RETRIEVE_DEACT_AUDIT",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_RETRIEVE_DEACT_AUDIT",
+      "to": "NODE_DEACT_ACTOR_DA",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_DEACT_ACTOR_DA",
+      "to": "TERMINAL_LOGIN_3",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_DEACT_ACTOR_DA",
+      "to": "TERMINAL_LOGIN_3_ESCALATE",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_FETCH_MIRROR_USER",
+      "to": "NODE_COMPARE_EMP_FED_ID",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_COMPARE_EMP_FED_ID",
+      "to": "NODE_IS_INTERNAL_USER",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_IS_INTERNAL_USER",
+      "to": "NODE_FED_ID_BLANK",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_IS_INTERNAL_USER",
+      "to": "NODE_CIAM_SYNC_MATCH",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_FED_ID_BLANK",
+      "to": "TERMINAL_LOGIN_4",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_FED_ID_BLANK",
+      "to": "NODE_OKTA_SUSPENDED",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_OKTA_SUSPENDED",
+      "to": "TERMINAL_LOGIN_5",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_OKTA_SUSPENDED",
+      "to": "NODE_AZURE_WORKDAY_MATCH",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_AZURE_WORKDAY_MATCH",
+      "to": "NODE_MOBILE_LOGIN_CHECK",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_AZURE_WORKDAY_MATCH",
+      "to": "TERMINAL_LOGIN_6",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_MOBILE_LOGIN_CHECK",
+      "to": "TERMINAL_LOGIN_8",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_MOBILE_LOGIN_CHECK",
+      "to": "TERMINAL_OUT_OF_SCOPE",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_CIAM_SYNC_MATCH",
+      "to": "NODE_IS_EMAIL_VERIFIED",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_CIAM_SYNC_MATCH",
+      "to": "TERMINAL_LOGIN_7",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_IS_EMAIL_VERIFIED",
+      "to": "TERMINAL_OUT_OF_SCOPE",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_IS_EMAIL_VERIFIED",
+      "to": "NODE_WO_EMAIL_CHECK",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_WO_EMAIL_CHECK",
+      "to": "TERMINAL_LOGIN_9",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_WO_EMAIL_CHECK",
+      "to": "TERMINAL_LOGIN_10",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APPROVED_URL",
+      "to": "NODE_CHECK_USER_UNAPPROVED_URL",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_CHECK_USER_UNAPPROVED_URL",
+      "to": "NODE_USER_EXISTS_UNAPPROVED_URL",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_USER_EXISTS_UNAPPROVED_URL",
+      "to": "TERMINAL_LOGIN_2",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_USER_EXISTS_UNAPPROVED_URL",
+      "to": "TERMINAL_LOGIN_1",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APPROVED_URL",
+      "to": "NODE_IS_MAIN_ORG_URL",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_IS_MAIN_ORG_URL",
+      "to": "NODE_SEARCH_MAIN_ORG",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_IS_MAIN_ORG_URL",
+      "to": "NODE_SEARCH_PROVIDED_CROSS_ORG",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_SEARCH_PROVIDED_CROSS_ORG",
+      "to": "NODE_USER_FOUND_IN_PROVIDED_ORG",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_USER_FOUND_IN_PROVIDED_ORG",
+      "to": "TERMINAL_LOGIN_REGIONAL_SCOPE",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_USER_FOUND_IN_PROVIDED_ORG",
+      "to": "NODE_SEARCH_MAIN_FROM_CROSS",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_SEARCH_MAIN_FROM_CROSS",
+      "to": "NODE_USER_FOUND_MAIN_FROM_CROSS",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_USER_FOUND_MAIN_FROM_CROSS",
+      "to": "TERMINAL_LOGIN_2C",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_USER_FOUND_MAIN_FROM_CROSS",
+      "to": "NODE_SEARCH_OTHER_ORGS",
+      "type": "ON_NO"
+    }
   ],
   "approved_orgs": [
     {
@@ -386,7 +666,9 @@
       "full_name": "Europe, Middle East & Africa",
       "login_url": "https://bd2my.salesforce.com",
       "domain_name": "bd2my.salesforce.com",
-      "aliases": ["bd2.my.salesforce.com"],
+      "aliases": [
+        "bd2.my.salesforce.com"
+      ],
       "is_main": false,
       "description": "Enterprise organization for EMEA region"
     },

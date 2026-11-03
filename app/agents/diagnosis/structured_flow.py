@@ -506,6 +506,95 @@ class StructuredDiagnosisFlow:
             new_evidence.append(new_ev)
             return {"URL": login_url, "IsApproved": is_valid}
 
+        elif action_type == "check_user_unapproved_url":
+            target = state_vars["target_identifier"]
+            user_details = cache.get("User")
+            if not user_details:
+                search_results = salesforce_user_search(target)
+                identity_check = validate_user_identity_resolution(search_results)
+                matched_user = identity_check.get("user") if identity_check.get("status") in ("resolved", "unique") else None
+                if matched_user:
+                    user_id = matched_user["Id"]
+                    user_details = salesforce_get_user_details(user_id)
+                    cache["User"] = user_details
+                    cache[f"User:{user_id}"] = user_details
+                    state_vars["user_details"] = user_details
+                    state_vars["matched_user"] = matched_user
+            exists_in_main = bool(user_details or state_vars.get("matched_user"))
+            state_vars["user_exists_in_main_org"] = exists_in_main
+
+            ev_id = f"ev_user_check_unapp_{uuid.uuid4().hex[:6]}"
+            new_ev = {
+                "evidence_id": ev_id,
+                "tool_name": "salesforce_user_search",
+                "field_name": "UserExistenceUnapprovedURL",
+                "observed_value": {
+                    "Target": target,
+                    "ExistsInMainOrg": exists_in_main,
+                    "UserId": user_details.get("Id") if user_details else None,
+                },
+            }
+            recorded_evidence.append(new_ev)
+            new_evidence.append(new_ev)
+            return {"ExistsInMainOrg": exists_in_main, "Target": target}
+
+        elif action_type == "search_user_provided_org":
+            target = state_vars["target_identifier"]
+            login_url = state_vars.get("login_url", "")
+            target_org = self._get_org_for_url(login_url)
+            state_vars["provided_org_info"] = target_org
+
+            found_in_provided = self._search_specific_org(target, target_org.get("org_id"))
+            state_vars["user_found_in_provided_org"] = bool(found_in_provided)
+            state_vars["provided_org_match"] = found_in_provided
+
+            ev_id = f"ev_provided_org_{uuid.uuid4().hex[:6]}"
+            new_ev = {
+                "evidence_id": ev_id,
+                "tool_name": "cross_org_user_search",
+                "field_name": "UserLookupProvidedOrg",
+                "observed_value": {
+                    "Target": target,
+                    "ProvidedOrg": target_org,
+                    "ExistsInProvidedOrg": bool(found_in_provided),
+                },
+            }
+            recorded_evidence.append(new_ev)
+            new_evidence.append(new_ev)
+            return {"ExistsInProvidedOrg": bool(found_in_provided), "Target": target, "Org": target_org}
+
+        elif action_type == "search_main_from_cross":
+            target = state_vars["target_identifier"]
+            user_details = cache.get("User")
+            if not user_details:
+                search_results = salesforce_user_search(target)
+                identity_check = validate_user_identity_resolution(search_results)
+                matched_user = identity_check.get("user") if identity_check.get("status") in ("resolved", "unique") else None
+                if matched_user:
+                    user_id = matched_user["Id"]
+                    user_details = salesforce_get_user_details(user_id)
+                    cache["User"] = user_details
+                    cache[f"User:{user_id}"] = user_details
+                    state_vars["user_details"] = user_details
+                    state_vars["matched_user"] = matched_user
+            exists_in_main = bool(user_details or state_vars.get("matched_user"))
+            state_vars["user_found_main_from_cross"] = exists_in_main
+
+            ev_id = f"ev_main_from_cross_{uuid.uuid4().hex[:6]}"
+            new_ev = {
+                "evidence_id": ev_id,
+                "tool_name": "salesforce_user_search",
+                "field_name": "UserLookupMainFromCross",
+                "observed_value": {
+                    "Target": target,
+                    "ExistsInMainOrg": exists_in_main,
+                    "UserId": user_details.get("Id") if user_details else None,
+                },
+            }
+            recorded_evidence.append(new_ev)
+            new_evidence.append(new_ev)
+            return {"ExistsInMainOrg": exists_in_main, "Target": target}
+
         elif action_type == "search_user_main_org":
             target = state_vars["target_identifier"]
             user_details = cache.get("User")
@@ -773,6 +862,86 @@ class StructuredDiagnosisFlow:
                 ),
             }
             return val, {"IsApproved": val, "URL": login_url}, cmp_info
+
+        elif condition_key == "user_exists_in_main_org":
+            val = bool(state_vars.get("user_exists_in_main_org", False))
+            target = state_vars.get("target_identifier")
+            cmp_info = {
+                "decision_point": "User Exists in Main Org? (Unapproved URL)",
+                "rule_evaluated": "Before concluding wrong URL, verify if affected user has an account in Main Org (NA)",
+                "expected_criteria": "User account exists in Main Salesforce Organization",
+                "target_value": f"Target: '{target}', FoundInMain: {val}",
+                "baseline_value": "Active User record in Main Org",
+                "comparison_result": f"User account present in Main Org: {val}",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": (
+                    f"User '{target}' exists in Main Org (NA). The unapproved URL is the primary cause of login failure. Traversing edge ON_YES to TERMINAL_LOGIN_2 (provide bdx URL and verify)."
+                    if val
+                    else f"User '{target}' does NOT exist in Main Org. The user lacks an account regardless of URL. Traversing edge ON_NO to TERMINAL_LOGIN_1 (Advise user provisioning RITM and reroute to HCL Service Desk)."
+                ),
+            }
+            return val, {"ExistsInMain": val, "Target": target}, cmp_info
+
+        elif condition_key == "is_main_org_url":
+            login_url = state_vars.get("login_url", "")
+            is_main = self._is_main_org_url(login_url)
+            val = is_main
+            main_org = neo4j_repository.get_main_org()
+            cmp_info = {
+                "decision_point": "Provided URL Belongs to Main Org?",
+                "rule_evaluated": "Determine if the approved URL points to the primary Main Organization (bdx.my.salesforce.com) vs secondary cross-org",
+                "expected_criteria": f"URL hostname equals '{main_org.get('domain_name', 'bdx.my.salesforce.com')}'",
+                "target_value": f"URL: '{login_url}'",
+                "baseline_value": f"Main Org Domain: '{main_org.get('domain_name')}'",
+                "comparison_result": "MATCH - URL belongs to Main Organization (NA)" if val else "NO - URL belongs to a secondary cross-organization",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": (
+                    f"Provided URL '{login_url}' belongs to primary Main Organization ({main_org.get('name')}). Traversing edge ON_YES to search user in Main Org."
+                    if val
+                    else f"Provided URL '{login_url}' belongs to a secondary organization. Traversing edge ON_NO to verify user in that specific organization."
+                ),
+            }
+            return val, {"IsMainOrgUrl": val, "URL": login_url}, cmp_info
+
+        elif condition_key == "user_found_in_provided_org":
+            val = bool(state_vars.get("user_found_in_provided_org", False))
+            target = state_vars.get("target_identifier")
+            org_info = state_vars.get("provided_org_info", {})
+            org_name = org_info.get("name") or "Secondary Org"
+            cmp_info = {
+                "decision_point": "User Exists in Provided Secondary Org?",
+                "rule_evaluated": f"Check whether affected user holds an account in the organization matching the provided URL ({org_name})",
+                "expected_criteria": f"User record exists in {org_name}",
+                "target_value": f"Target: '{target}', ExistsInProvidedOrg: {val}",
+                "baseline_value": f"User directory for {org_name}",
+                "comparison_result": f"User found in {org_name}: {val}",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": (
+                    f"User '{target}' confirmed to exist in {org_name}. This organization is managed by a dedicated regional support team. Traversing edge ON_YES to TERMINAL_LOGIN_REGIONAL_SCOPE (Reroute ticket to {org_name} support team)."
+                    if val
+                    else f"User '{target}' does NOT exist in {org_name}. Checking whether user is a Main Org employee who accidentally entered a regional link. Traversing edge ON_NO to search Main Org."
+                ),
+            }
+            return val, {"FoundInProvidedOrg": val, "Org": org_name}, cmp_info
+
+        elif condition_key == "user_found_main_from_cross":
+            val = bool(state_vars.get("user_found_main_from_cross", False))
+            target = state_vars.get("target_identifier")
+            cmp_info = {
+                "decision_point": "User Exists in Main Org? (Cross-Org Link)",
+                "rule_evaluated": "Check whether user who entered a cross-org link actually holds an account in the Main Organization (NA)",
+                "expected_criteria": "User account exists in Main Salesforce Organization (NA)",
+                "target_value": f"Target: '{target}', ExistsInMain: {val}",
+                "baseline_value": "Active User record in Main Org",
+                "comparison_result": f"User present in Main Org: {val}",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": (
+                    f"User '{target}' exists in Main Org (NA), but attempted to access a cross-org endpoint. Traversing edge ON_YES to TERMINAL_LOGIN_2C (Provide official Main Org URL https://bdx.my.salesforce.com)."
+                    if val
+                    else f"User '{target}' does NOT exist in Main Org. Searching remaining registered secondary organizations. Traversing edge ON_NO to search other orgs."
+                ),
+            }
+            return val, {"ExistsInMain": val, "Target": target}, cmp_info
 
         elif condition_key == "user_found_in_main_org":
             matched = state_vars.get("matched_user") or user_details
@@ -1155,6 +1324,48 @@ class StructuredDiagnosisFlow:
         ])
 
         return host in approved_domains
+
+    def _is_main_org_url(self, url: str) -> bool:
+        if not url:
+            return True
+        import re
+        clean = url.strip().lower()
+        host = re.sub(r"^https?://", "", clean).split("/")[0].split("?")[0].strip()
+        main_org = neo4j_repository.get_main_org()
+        main_domain = main_org.get("domain_name", "bdx.my.salesforce.com").lower()
+        return host == main_domain or host.startswith("bdx.") or host == "login.salesforce.com"
+
+    def _get_org_for_url(self, url: str) -> Dict[str, Any]:
+        import re
+        clean = url.strip().lower()
+        host = re.sub(r"^https?://", "", clean).split("/")[0].split("?")[0].strip()
+        for org in neo4j_repository.get_approved_orgs():
+            d = org.get("domain_name", "").lower()
+            if d and d in host:
+                return org
+            for alias in org.get("aliases", []):
+                if alias.lower() in host:
+                    return org
+        if "bd2" in host or "emea" in host:
+            return {"org_id": "ORG_EMEA", "name": "EMEA", "login_url": "https://bd2my.salesforce.com", "domain_name": "bd2my.salesforce.com"}
+        elif "bdxga" in host or "ace" in host:
+            return {"org_id": "ORG_ACE_GA", "name": "ACE/GA", "login_url": "https://bdxga.my.salesforce.com", "domain_name": "bdxga.my.salesforce.com"}
+        elif "bdsmx" in host or "smax" in host:
+            return {"org_id": "ORG_SMAX", "name": "SMAX", "login_url": "https://bdsmx.my.salesforce.com", "domain_name": "bdsmx.my.salesforce.com"}
+        return neo4j_repository.get_main_org()
+
+    def _search_specific_org(self, target_identifier: str, org_id: str) -> Optional[Dict[str, Any]]:
+        target_lower = target_identifier.lower()
+        if org_id == "ORG_EMEA" or "emea" in str(org_id).lower():
+            if any(k in target_lower for k in ["emea", "europe", "uk", "de", "fr", "bd2"]):
+                return {"OrgId": "00Dxx000000EMEA", "OrgName": "EMEA Salesforce Org", "Domain": "bd2my.salesforce.com", "LoginUrl": "https://bd2my.salesforce.com"}
+        elif org_id == "ORG_ACE_GA" or "ace" in str(org_id).lower() or "ga" in str(org_id).lower():
+            if any(k in target_lower for k in ["ace", "ga", "asia", "bdxga"]):
+                return {"OrgId": "00Dxx000000ACEGA", "OrgName": "ACE/GA Salesforce Org", "Domain": "bdxga.my.salesforce.com", "LoginUrl": "https://bdxga.my.salesforce.com"}
+        elif org_id == "ORG_SMAX" or "smax" in str(org_id).lower():
+            if any(k in target_lower for k in ["smax", "servicemax", "bdsmx"]):
+                return {"OrgId": "00Dxx000000SMAX", "OrgName": "ServiceMax Salesforce Org", "Domain": "bdsmx.my.salesforce.com", "LoginUrl": "https://bdsmx.my.salesforce.com"}
+        return None
 
     def _search_other_orgs(self, target_identifier: str) -> Optional[Dict[str, Any]]:
         target_lower = target_identifier.lower()
