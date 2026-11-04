@@ -17,6 +17,7 @@ Tools:
 - salesforce_update_user: Execute approved user record update (resolution only)
 """
 
+import os
 from typing import Any, Dict, List, Optional
 
 from app.integrations.salesforce.client import salesforce_client
@@ -213,6 +214,8 @@ def salesforce_validate_login_url(url: str) -> Dict[str, Any]:
 
     Approved endpoints:
     - Main Org (NA): bdx.my.salesforce.com (Official Primary)
+    - Main Org (Developer PoC): Active connected Developer Org from .env
+      (orgfarm-9053409114-dev-ed.develop.my.salesforce.com)
     - EMEA: bd2my.salesforce.com
     - ACE/GA: bdxga.my.salesforce.com
     - ServiceMax (SMAX): bdsmx.my.salesforce.com
@@ -226,12 +229,26 @@ def salesforce_validate_login_url(url: str) -> Dict[str, Any]:
             "main_url": "https://bdx.my.salesforce.com",
         }
     clean_url = str(url).strip().lower()
+
+    # =========================================================================
+    # [POC DEVELOPER ORG ENABLER - REMOVABLE FOR PRODUCTION DEPLOYMENT]
+    # Recognizes the connected Salesforce Developer Edition org from .env as Main Org
+    # =========================================================================
+    dev_instance = os.environ.get("SALESFORCE_INSTANCE_URL") or os.environ.get("SALESFORCE_LOGIN_URL") or "https://orgfarm-9053409114-dev-ed.develop.my.salesforce.com"
+    dev_domain = dev_instance.replace("https://", "").replace("http://", "").split("/")[0].strip().lower()
+
     mapping = {
-        "bdx.my.salesforce.com": {"org_name": "Main Org (NA)", "is_main_org": True, "domain": "bdx.my.salesforce.com"},
-        "bd2my.salesforce.com": {"org_name": "EMEA Salesforce Org", "is_main_org": False, "domain": "bd2my.salesforce.com"},
-        "bdxga.my.salesforce.com": {"org_name": "ACE/GA Salesforce Org", "is_main_org": False, "domain": "bdxga.my.salesforce.com"},
-        "bdsmx.my.salesforce.com": {"org_name": "ServiceMax (SMAX) Org", "is_main_org": False, "domain": "bdsmx.my.salesforce.com"},
+        # Primary Enterprise NA Main Org
+        "bdx.my.salesforce.com": {"org_name": "Main Org (NA)", "is_main_org": True, "domain": "bdx.my.salesforce.com", "main_url": "https://bdx.my.salesforce.com"},
+        # [POC] Active connected Developer Org also recognized as Main Org alongside NA
+        dev_domain: {"org_name": "Main Org (Developer PoC)", "is_main_org": True, "domain": dev_domain, "main_url": dev_instance},
+        "orgfarm-9053409114-dev-ed.develop.lightning.force.com": {"org_name": "Main Org (Developer PoC)", "is_main_org": True, "domain": dev_domain, "main_url": dev_instance},
+        # Secondary Regional Enterprise Orgs
+        "bd2my.salesforce.com": {"org_name": "EMEA Salesforce Org", "is_main_org": False, "domain": "bd2my.salesforce.com", "main_url": "https://bdx.my.salesforce.com"},
+        "bdxga.my.salesforce.com": {"org_name": "ACE/GA Salesforce Org", "is_main_org": False, "domain": "bdxga.my.salesforce.com", "main_url": "https://bdx.my.salesforce.com"},
+        "bdsmx.my.salesforce.com": {"org_name": "ServiceMax (SMAX) Org", "is_main_org": False, "domain": "bdsmx.my.salesforce.com", "main_url": "https://bdx.my.salesforce.com"},
     }
+
     for domain_key, info in mapping.items():
         if domain_key in clean_url:
             return {
@@ -240,8 +257,20 @@ def salesforce_validate_login_url(url: str) -> Dict[str, Any]:
                 "is_main_org": info["is_main_org"],
                 "org_name": info["org_name"],
                 "domain": info["domain"],
-                "main_url": "https://bdx.my.salesforce.com",
+                "main_url": info.get("main_url", "https://bdx.my.salesforce.com"),
             }
+
+    # Match standard developer edition pattern for PoC testing
+    if "-dev-ed." in clean_url or "develop.my.salesforce.com" in clean_url:
+        return {
+            "is_provided": True,
+            "is_approved": True,
+            "is_main_org": True,
+            "org_name": "Main Org (Developer PoC)",
+            "domain": clean_url,
+            "main_url": dev_instance,
+        }
+
     return {
         "is_provided": True,
         "is_approved": False,

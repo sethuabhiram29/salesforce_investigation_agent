@@ -9,6 +9,7 @@ and navigates the graph until a TerminalNode is reached.
 """
 
 import logging
+import os
 from typing import Any, Dict, List, Optional, Tuple
 import uuid
 
@@ -1397,6 +1398,15 @@ class StructuredDiagnosisFlow:
             "login.salesforce.com",
         ])
 
+        # [POC DEVELOPER ORG ENABLER] Also allow connected Developer Org from .env
+        dev_inst = os.environ.get("SALESFORCE_INSTANCE_URL") or os.environ.get("SALESFORCE_LOGIN_URL") or "https://orgfarm-9053409114-dev-ed.develop.my.salesforce.com"
+        dev_host = dev_inst.replace("https://", "").replace("http://", "").split("/")[0].strip().lower()
+        approved_domains.add(dev_host)
+        approved_domains.add("orgfarm-9053409114-dev-ed.develop.lightning.force.com")
+
+        if "-dev-ed." in host or "develop.my.salesforce.com" in host:
+            return True
+
         return host in approved_domains
 
     def _is_main_org_url(self, url: str) -> bool:
@@ -1407,7 +1417,17 @@ class StructuredDiagnosisFlow:
         host = re.sub(r"^https?://", "", clean).split("/")[0].split("?")[0].strip()
         main_org = neo4j_repository.get_main_org()
         main_domain = main_org.get("domain_name", "bdx.my.salesforce.com").lower()
-        return host == main_domain or host.startswith("bdx.") or host == "login.salesforce.com"
+
+        # [POC DEVELOPER ORG ENABLER] Treat both bdx (NA) and connected Developer Org as Main Org
+        if host == main_domain or host.startswith("bdx.") or host == "login.salesforce.com":
+            return True
+
+        dev_inst = os.environ.get("SALESFORCE_INSTANCE_URL") or os.environ.get("SALESFORCE_LOGIN_URL") or "https://orgfarm-9053409114-dev-ed.develop.my.salesforce.com"
+        dev_host = dev_inst.replace("https://", "").replace("http://", "").split("/")[0].strip().lower()
+        if host == dev_host or "orgfarm-9053409114-dev-ed" in host or "-dev-ed." in host:
+            return True
+
+        return False
 
     def _get_org_for_url(self, url: str) -> Dict[str, Any]:
         import re

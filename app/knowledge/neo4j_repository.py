@@ -459,6 +459,17 @@ class Neo4jKnowledgeRepository:
                 "is_main": True,
             },
             {
+                "org_id": "ORG_DEV_POC",
+                "name": "Main Dev Org (PoC)",
+                "full_name": "Connected Developer Org (Main PoC)",
+                "login_url": "https://orgfarm-9053409114-dev-ed.develop.my.salesforce.com",
+                "domain_name": "orgfarm-9053409114-dev-ed.develop.my.salesforce.com",
+                "aliases": [
+                    "orgfarm-9053409114-dev-ed.develop.lightning.force.com"
+                ],
+                "is_main": True,
+            },
+            {
                 "org_id": "ORG_EMEA",
                 "name": "EMEA",
                 "full_name": "Europe, Middle East & Africa",
