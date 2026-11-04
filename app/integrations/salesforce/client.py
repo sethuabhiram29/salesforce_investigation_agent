@@ -402,6 +402,28 @@ class SalesforceMCPClient:
                         return [{"SObjectType": obj_name, **perms}]
             return []
 
+        if "setupaudittrail" in q_lower:
+            # Check if any user in fixtures is marked for Mulesoft
+            is_mule = False
+            for u in self._working_fixtures:
+                if u.get("IsActive") is False and (u.get("MuleSoftIntegrationUser") or "mulesoft" in str(u.get("DeactivatedBy", "")).lower()):
+                    is_mule = True
+                    break
+            actor_id = "005xx00000MULESOFT" if is_mule else "005xx00000DA_ADMIN"
+            return [{
+                "Id": "00Yxx000000AUDIT1",
+                "Action": "deactivatedUser",
+                "CreatedById": actor_id,
+                "CreatedDate": "2026-11-01T10:00:00Z",
+                "Display": f"Deactivated user by {actor_id}",
+            }]
+
+        if "delegategroupmember" in q_lower:
+            return [{
+                "Id": "00Zxx000000MEMB1",
+                "UserOrGroupId": "005xx00000DA_ADMIN",
+            }]
+
         for u in self._working_fixtures:
             u_email = str(u.get("Email", "")).lower()
             u_id = str(u.get("Id", "")).lower()

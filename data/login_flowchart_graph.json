@@ -97,15 +97,15 @@
       "type": "action",
       "action_type": "get_deactivation_audit",
       "tool_name": "salesforce_get_user_field",
-      "description": "Inspect SetupAuditTrail to identify who deactivated the user"
+      "description": "Inspect SetupAuditTrail and retrieve latest user deactivation entries; retrieve Delegated Administrator members from DelegateGroupMember"
     },
     {
       "id": "NODE_DEACT_ACTOR_DA",
-      "name": "Deactivation actor verified as DA?",
+      "name": "Deactivation actor matches DelegateGroupMember?",
       "swimlane": "User Deactivation",
       "type": "decision",
       "condition_key": "is_deactivated_by_da",
-      "description": "Check if SetupAuditTrail actor was a Delegated Administrator"
+      "description": "Compare SetupAuditTrail.CreatedById with DelegateGroupMember.UserOrGroupId"
     },
     {
       "id": "NODE_FETCH_MIRROR_USER",
@@ -224,25 +224,25 @@
     },
     {
       "id": "TERMINAL_LOGIN_3",
-      "name": "Confirmed User Deactivated by DA Admin",
+      "name": "Confirmed User Deactivated by Delegated Administrator",
+      "swimlane": "User Deactivation",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-3A",
+      "decision_basis": "User exists in NA org AND IsActive = False. Deactivated user identified in SetupAuditTrail and SetupAuditTrail.CreatedById matches DelegateGroupMember.UserOrGroupId. Inform user to raise Manage User RITM for account reactivation.",
+      "expected_criteria": "User exists in NA org AND IsActive = False AND SetupAuditTrail.CreatedById matches DelegateGroupMember.UserOrGroupId",
+      "skill_file": "LOGIN-3A-delegated-admin-deactivation.md"
+    },
+    {
+      "id": "TERMINAL_LOGIN_3_ESCALATE",
+      "name": "Automated deactivation from MuleSoft integration process",
       "swimlane": "User Deactivation",
       "type": "terminal",
       "status": "confirmed",
       "issue_code": "LOGIN-3",
-      "decision_basis": "User account is deactivated in Salesforce (IsActive=False). Audit log verifies deactivation performed by Delegated Administrator.",
-      "expected_criteria": "User.IsActive == True",
+      "decision_basis": "User exists in NA Org AND IsActive = False AND SetupAuditTrail.CreatedById = MuleSoft Integration User. Investigate deactivation reason with MuleSoft team, review payload/Kibana logs, engage Workday team if required, and update work notes with findings.",
+      "expected_criteria": "User exists in NA Org AND IsActive = False AND SetupAuditTrail.CreatedById = MuleSoft Integration User",
       "skill_file": "LOGIN-3-user-account-deactivated.md"
-    },
-    {
-      "id": "TERMINAL_LOGIN_3_ESCALATE",
-      "name": "If any other deactivation like mulesoft need human review",
-      "swimlane": "User Deactivation",
-      "type": "terminal",
-      "status": "escalation_required",
-      "issue_code": "LOGIN-3-ESCALATE",
-      "decision_basis": "User account deactivated by automated integration (Mulesoft/Workday) or unknown actor; requires manual review per policy.",
-      "expected_criteria": "Delegated Administrator deactivation",
-      "skill_file": null
     },
     {
       "id": "TERMINAL_LOGIN_4",
@@ -251,8 +251,8 @@
       "type": "terminal",
       "status": "confirmed",
       "issue_code": "LOGIN-4",
-      "decision_basis": "User account is active in Salesforce but lacks FederationIdentifier, directly causing SAML SSO failure.",
-      "expected_criteria": "User.IsActive == True AND (User.FederationIdentifier is null or empty)",
+      "decision_basis": "User exists in NA Org AND IsActive = True AND Internal User AND FederationIdentifier IS NULL or Blank. Update FederationIdentifier with EmployeeNumber.",
+      "expected_criteria": "User exists in NA Org AND IsActive = True AND Internal User AND FederationIdentifier IS NULL or Blank",
       "skill_file": "LOGIN-4-federation-id-missing.md"
     },
     {
@@ -262,8 +262,8 @@
       "type": "terminal",
       "status": "confirmed",
       "issue_code": "LOGIN-5",
-      "decision_basis": "User account is active in Salesforce but user identity is suspended or frozen in Okta/Identity Provider.",
-      "expected_criteria": "Active Federation status in Identity Provider",
+      "decision_basis": "User exists in NA Org AND IsActive = True AND Internal User AND FederationIdentifier contains suspended/frozen. Inform user to raise Manage User RITM for FederationIdentifier correction.",
+      "expected_criteria": "User exists in NA Org AND IsActive = True AND Internal User AND FederationIdentifier contains suspended/frozen",
       "skill_file": "LOGIN-5-federation-id-suspended.md"
     },
     {
@@ -273,8 +273,8 @@
       "type": "terminal",
       "status": "confirmed",
       "issue_code": "LOGIN-6",
-      "decision_basis": "Salesforce FederationIdentifier does not match active Employee ID in Azure AD / Workday directory.",
-      "expected_criteria": "FederationIdentifier matches Workday Employee ID in Azure",
+      "decision_basis": "User exists in NA Org AND IsActive = True AND Internal User AND FederationIdentifier IS NOT NULL AND FederationIdentifier != EmployeeNumber. Engage Azure Team for validation and synchronization.",
+      "expected_criteria": "User exists in NA Org AND IsActive = True AND Internal User AND FederationIdentifier IS NOT NULL AND FederationIdentifier != EmployeeNumber",
       "skill_file": "LOGIN-6-federation-id-not-synced-azure.md"
     },
     {
@@ -284,8 +284,8 @@
       "type": "terminal",
       "status": "confirmed",
       "issue_code": "LOGIN-7",
-      "decision_basis": "External user Federation Identifier does not match external CIAM synthetic identity mapping.",
-      "expected_criteria": "External Federation ID matches CIAM identity mapping",
+      "decision_basis": "User exists in NA Org AND IsActive = True AND External User AND FederationIdentifier requires CIAM validation. Engage CIAM Team for validation and synchronization.",
+      "expected_criteria": "User exists in NA Org AND IsActive = True AND External User AND FederationIdentifier requires CIAM validation",
       "skill_file": "LOGIN-7-external-user-federation-id-not-synced-ciam.md"
     },
     {

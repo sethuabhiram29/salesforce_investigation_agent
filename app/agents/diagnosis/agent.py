@@ -11,6 +11,7 @@ Responsibilities:
 """
 
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from app.agents.diagnosis.structured_flow import StructuredDiagnosisFlow
@@ -66,11 +67,13 @@ class DiagnosisAgent:
 
         # 1. Determine target user identifier
         affected_user = state.get("affected_user") or {}
+        desc = state.get("incident", {}).get("description", "")
+        emails_in_desc = re.findall(r"[\w\.-]+@[\w\.-]+\.\w+", desc)
         identifier = (
             affected_user.get("Email")
             or affected_user.get("Username")
             or state.get("incident", {}).get("caller_email")
-            or state.get("incident", {}).get("description")
+            or (emails_in_desc[0] if emails_in_desc else None)
         )
 
         if not identifier:
@@ -189,50 +192,60 @@ class DiagnosisAgent:
                 })
                 return state
             else:
-                state["step_audit_trail"].append({
-                    "stage": "diagnosis",
-                    "step_order": len(state.get("step_audit_trail", [])) + 1,
-                    "step_name": f"Terminal Node Reached: Escalation Required ({issue_code})",
-                    "graph_node_id": f"STRUCTURED_FLOW_ESCALATE_{issue_code.replace('-', '_')}",
-                    "graph_node_name": f"Structured Flow Escalation: {issue_code}",
-                    "movement_direction": "Advance to Orchestrator Escalation Node",
-                    "status": "escalation_required",
-                    "status_reason": diagnosis_result.decision_basis,
-                    "current_step_details": diagnosis_result.decision_basis,
-                    "why_step_taken": "Flowchart reached an escalation boundary node requiring human review",
-                    "next_step": "Route to Tier-2 human support team per escalation policy",
-                    "next_step_reason": "Escalation node reached in flowchart.",
-                    "skill_file_loaded": None,
-                    "why_loaded": "Escalation node reached in flowchart.",
-                    "tool_called": "StructuredDiagnosisFlow",
-                    "tools_called": [e.get("tool_name") for e in new_evidence],
-                    "tool_result": diagnosis_result.observed_values,
-                    "observed_summary": diagnosis_result.observed_values,
-                    "expected_criteria": diagnosis_result.expected_criteria,
-                    "observed_values": diagnosis_result.observed_values,
-                    "comparison_summary": diagnosis_result.comparison_summary,
-                    "decision_basis": diagnosis_result.decision_basis,
-                })
-
-                state["diagnosis_result"] = diagnosis_result.dict()
-                state["incident_domain"] = "LOGIN"
-
-                state.setdefault("trace_events", []).append({
-                    "stage": "diagnosis",
-                    "agent_name": "DiagnosisAgent",
-                    "action": f"Escalated incident via Structured Flow ({issue_code})",
-                    "details": {
+                fallback_domains = [d for d in domains_to_evaluate if d != "LOGIN"]
+                if fallback_domains:
+                    logger.info(
+                        "Structured flow for LOGIN did not confirm an issue (%s). Proceeding to evaluate fallback domains: %s",
+                        issue_code,
+                        fallback_domains,
+                    )
+                else:
+                    state["step_audit_trail"].append({
+                        "stage": "diagnosis",
+                        "step_order": len(state.get("step_audit_trail", [])) + 1,
+                        "step_name": f"Terminal Node Reached: Escalation Required ({issue_code})",
+                        "graph_node_id": f"STRUCTURED_FLOW_ESCALATE_{issue_code.replace('-', '_')}",
+                        "graph_node_name": f"Structured Flow Escalation: {issue_code}",
+                        "movement_direction": "Advance to Orchestrator Escalation Node",
                         "status": "escalation_required",
-                        "issue_code": issue_code,
-                        "flowchart": "Login Issues Decision Tree",
-                    },
-                })
-                return state
+                        "status_reason": diagnosis_result.decision_basis,
+                        "current_step_details": diagnosis_result.decision_basis,
+                        "why_step_taken": "Flowchart reached an escalation boundary node requiring human review",
+                        "next_step": "Route to Tier-2 human support team per escalation policy",
+                        "next_step_reason": "Escalation node reached in flowchart.",
+                        "skill_file_loaded": None,
+                        "why_loaded": "Escalation node reached in flowchart.",
+                        "tool_called": "StructuredDiagnosisFlow",
+                        "tools_called": [e.get("tool_name") for e in new_evidence],
+                        "tool_result": diagnosis_result.observed_values,
+                        "observed_summary": diagnosis_result.observed_values,
+                        "expected_criteria": diagnosis_result.expected_criteria,
+                        "observed_values": diagnosis_result.observed_values,
+                        "comparison_summary": diagnosis_result.comparison_summary,
+                        "decision_basis": diagnosis_result.decision_basis,
+                    })
+
+                    state["diagnosis_result"] = diagnosis_result.dict()
+                    state["incident_domain"] = "LOGIN"
+
+                    state.setdefault("trace_events", []).append({
+                        "stage": "diagnosis",
+                        "agent_name": "DiagnosisAgent",
+                        "action": f"Escalated incident via Structured Flow ({issue_code})",
+                        "details": {
+                            "status": "escalation_required",
+                            "issue_code": issue_code,
+                            "flowchart": "Login Issues Decision Tree",
+                        },
+                    })
+                    return state
 
         historical_ranks = self._rank_candidates_from_history(state, initial_domain)
         logger.info("DiagnosisAgent extracted historical candidates: %s", historical_ranks)
 
         for domain_idx, domain in enumerate(domains_to_evaluate):
+            if domain == "LOGIN" and initial_domain == "LOGIN":
+                continue
             # Candidates ordering:
             # 1. Historical candidates strictly from this domain first (ranked top-to-bottom by similarity)
             # 2. Complete check: Followed by ALL remaining root causes belonging to this domain catalog from user's Excel SOP KB

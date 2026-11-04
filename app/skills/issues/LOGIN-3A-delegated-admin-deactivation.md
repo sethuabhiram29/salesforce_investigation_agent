@@ -1,109 +1,74 @@
 ---
 issue_code: LOGIN-3A
-title: Delegated Admin Deactivation
+title: Account Intentionally Deactivated by Delegated Administrator
 domains:
   - LOGIN
-version: 1
+version: 2
+user_type: Any
+condition: "User exists in NA org AND IsActive = False AND Deactivated user identified in SetupAuditTrail AND SetupAuditTrail.CreatedById matches DelegateGroupMember.UserOrGroupId"
 ---
 
 # Purpose
-A delegated admin user has been deactivated in Salesforce, preventing them from logging in. This issue applies when the user's IsActive field is false and they hold a delegated admin role.
+An account has been intentionally deactivated by a Delegated Administrator, preventing the user from authenticating into Salesforce. This applies when the user's `IsActive` field is `False` in the NA Org and audit trail evidence confirms deactivation by a member of a Delegated Administration Group (`DelegateGroupMember`).
 
 # Diagnosis
 
 ## Required Evidence
-- The caller's identity must be uniquely resolved to a single Salesforce user record
-- The IsActive field on that user record must be confirmed as false
-- The user's profile or role indicates delegated admin status
+- User exists in the primary NA Salesforce organization.
+- `User.IsActive == False`.
+- Deactivation event identified in `SetupAuditTrail`.
+- `SetupAuditTrail.CreatedById` matches a Delegated Administrator member (`DelegateGroupMember.UserOrGroupId`).
 
 ## Investigation Procedure
-1. Extract the username or email from the incident
-2. Search for the Salesforce user using the extracted identifier
-3. Verify the search returns exactly one matching user
-4. Retrieve the user's IsActive and Profile fields
-5. Confirm IsActive is false AND the user has a delegated admin profile/role
+1. Retrieve incident and caller details.
+2. Search user in NA Org using Salesforce SOSL Search (`salesforce_user_search` / `salesforce_execute_sosl`).
+3. If user not found, follow Login-1A/Login-1B process.
+4. Verify `User.IsActive` field.
+5. If `IsActive=False`, retrieve latest user deactivation entries from `SetupAuditTrail`.
+6. Retrieve Delegated Administrator members using `DelegateGroupMember` object.
+7. Compare `SetupAuditTrail.CreatedById` (or corresponding user identifier) with `DelegateGroupMember.UserOrGroupId`.
+8. If match found, confirm user was deactivated by Delegated Administrator.
+9. Update incident work notes with deactivation details.
+10. Inform user to raise Manage User RITM for reactivation.
 
 ## Permitted Diagnostic Tools
-- salesforce_user_search: Search users by username or email
-- salesforce_get_user_details: Retrieve full user record
+- `salesforce_user_search`: Search users by email, username, or employee number.
+- `salesforce_get_user_details`: Retrieve full user record (`IsActive`, `EmployeeNumber`, `Profile`).
+- `salesforce_execute_soql`: Query `SetupAuditTrail` and `DelegateGroupMember`.
 
 ## Confirmation Criteria
-- Exactly one user matched
-- IsActive is false
-- User profile indicates delegated admin role
-- All conditions must be met from actual tool responses
+Confirmed only when:
+- User is uniquely resolved in NA Org.
+- `User.IsActive == False`.
+- `SetupAuditTrail` record confirms deactivation action.
+- Actor is verified as a Delegated Administrator via `DelegateGroupMember.UserOrGroupId`.
 
 ## Alternative Explanations
-- If IsActive is true, this issue does not apply — consider other LOGIN issues
-- If user is not a delegated admin, different reactivation procedures may apply
-- If multiple users match, the identity is ambiguous — request clarification
-
-## Insufficient Evidence Behavior
-- If the user search returns no results, do not assume the user exists
-- If the tool call fails, do not treat the error as evidence
-- Report insufficient evidence and recommend clarification
+- If `IsActive == True`: Not deactivated; evaluate Federation ID issues (LOGIN-4, LOGIN-5, LOGIN-6).
+- If `SetupAuditTrail.CreatedById` matches MuleSoft Integration User: Classify as MuleSoft-driven deactivation (LOGIN-3).
+- If user not found in NA Org: Follow LOGIN-1 / LOGIN-1B.
 
 # Resolution
 
 ## Required Confirmed Diagnosis
-- issue_code: LOGIN-3A
-- status: confirmed
-- Evidence must show IsActive is false for the identified delegated admin user
+- `issue_code: LOGIN-3A`
+- `status: confirmed`
 
 ## Remediation Procedure
-1. Direct reactivation by the automated agent in Salesforce is prohibited per security policy.
-2. Formulate resolution guidance notifying the requester that their account was deactivated by a Delegated Administrator.
-3. Instruct the requester to submit a 'Manage User' Request Item (RITM) in ServiceNow to obtain authorized approval.
-4. Record comprehensive work notes in ServiceNow and transmit notification email to requester.
-5. Close/resolve the ServiceNow incident with status 'Resolved'.
+Direct reactivation by the automated agent in Salesforce is strictly prohibited per security compliance policy.
+1. Formulate resolution guidance notifying the user that their account was intentionally deactivated by a Delegated Administrator.
+2. Instruct the user to submit a **Manage User RITM** in ServiceNow for authorized account reactivation approval.
+3. Update ServiceNow incident work notes with complete deactivation audit details (actor, timestamp, Delegated Administrator verification).
+4. Inform user and resolve/close the incident per support process.
 
 ## Preconditions and Permitted Operations
-- Permitted: ServiceNow work notes, requester communication, incident closure.
-- Prohibited: Modifying User.IsActive directly in Salesforce without approved RITM.
-
-## Expected Result
-- The user is notified of the exact reason and provided clear RITM submission instructions.
-- Work notes and incident status are updated in ServiceNow.
-
-## Failure and Rollback Handling
-- If communication delivery fails, retry once, then escalate to human operator.
+- Permitted: ServiceNow work notes update, requester communication, incident closure.
+- Prohibited: Directly updating `User.IsActive = True` in Salesforce without an approved Manage User RITM.
 
 # HITL
-
-## When Approval Is Required
-- Always required before modifying any Salesforce user record
-
-## Information to Present
-- Incident number and caller identity
-- Confirmed Salesforce user (Username, Name, Id, Profile)
-- Current IsActive value (false)
-- Proposed change: IsActive → true
-- Evidence references supporting the diagnosis
-
-## Risks and Expected Impact
-- Risk: Reactivating a user who was intentionally deactivated
-- Impact: User will regain access to Salesforce
-
-## Valid Approval
-- Approver must confirm the specific user and the reactivation action
+- Present to operator: Incident ID, user details, deactivation actor, confirmed Delegated Admin status, RITM instructions.
+- Valid approval: Explicit confirmation to notify user and close ticket with Manage User RITM instructions.
 
 # Verification
-
-## Expected Post-Remediation State
-- IsActive is true on the target user record
-
-## Checks Required
-1. Retrieve the user record after the change
-2. Confirm IsActive is true
-3. Confirm user profile/role is unchanged
-
-## Failure and Escalation
-- If IsActive is still false, flag as failed remediation
-- Escalate to Salesforce admin if reactivation is blocked by org policy
-
-# Safety Rules
-- Never reactivate a user without confirmed delegated admin status
-- Never assume a user is inactive without a successful lookup
-- Never treat a tool error as evidence of user status
-- Never modify any field other than IsActive
-- Escalate when evidence or authorization is insufficient
+- Expected state: ServiceNow incident contains audit work notes and Manage User RITM communication delivered to caller.
+- Checks: Confirm `User.IsActive == False` remains unchanged in Salesforce (no unauthorized mutation) and RITM guidance is logged.

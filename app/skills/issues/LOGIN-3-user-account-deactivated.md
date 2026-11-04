@@ -1,89 +1,75 @@
 ---
 issue_code: LOGIN-3
-title: User Account Deactivated
+title: Automated Deactivation from MuleSoft Integration Process
 domains:
   - LOGIN
-version: 1
+version: 2
+user_type: Any
+condition: "User exists in NA Org AND IsActive = False AND SetupAuditTrail.CreatedById = MuleSoft Integration User"
 ---
 
 # Purpose
-The caller cannot sign in because their Salesforce user record exists in the NA org but is inactive. Applies to "account locked/disabled/can't log in" incidents where the user is found. The goal is to establish who or what deactivated the user, because the follow-up differs by actor.
-
-Note: reconcile with the existing LOGIN-3A (delegated admin deactivation). LOGIN-3A should be treated as the DA branch of this procedure or kept as a separate skill, but the two must not give conflicting instructions.
+An account has been automatically deactivated by the automated MuleSoft integration process (e.g. Workday HR synchronization, inactivity threshold, or synchronization error). The automated agent must investigate the deactivation event, inspect integration logs, and engage the MuleSoft/Workday teams.
 
 # Diagnosis
-## Required evidence
-- User record present in the NA org (id, `IsActive`, identifiers).
-- Deactivation details: when it happened and who or what performed it.
-- For Mulesoft-driven cases: Kibana log evidence.
 
-## Investigation procedure
-1. Resolve caller identifiers from ServiceNow (as in LOGIN-1).
-2. Look up the user in SFDC NA. If not found, stop and switch to LOGIN-1.
-3. Read `IsActive`. If active, this skill does not apply; investigate LOGIN-4 or other causes.
-4. If inactive, retrieve who deactivated the user and when (setup audit trail / deactivation history, as exposed by the available tools).
-5. Classify the actor from the evidence:
-   - Delegated Admin (DA) user.
-   - Mulesoft integration user.
-   - Other or unknown.
-6. For the Mulesoft actor, query Kibana logs for the deactivation event and note the Workday-related trigger if present.
+## Required Evidence
+- User exists in the primary NA Salesforce organization.
+- `User.IsActive == False`.
+- Deactivation event identified in `SetupAuditTrail`.
+- `SetupAuditTrail.CreatedById` matches the MuleSoft Integration User.
 
-## Permitted diagnostic tools
-- Salesforce user lookup and deactivation history (read-only).
-- Kibana log search (read-only), when available.
-- ServiceNow: retrieve incident, user (read-only).
-- Historical incidents and knowledge graph lookups (context only).
+## Investigation Procedure
+1. Retrieve incident and caller details.
+2. Search user in NA Org using Salesforce SOSL Search (`salesforce_user_search` / `salesforce_execute_sosl`).
+3. If user not found, follow Login-1A/Login-1B process.
+4. Verify `User.IsActive` field.
+5. If `IsActive=False`, retrieve latest deactivation entries from `SetupAuditTrail`.
+6. Identify deactivation event corresponding to the affected user.
+7. Validate that `SetupAuditTrail.CreatedById` matches MuleSoft Integration User.
+8. If match found, classify as MuleSoft-driven deactivation.
+9. Retrieve deactivation payload/log details from MuleSoft/Kibana (API/MCP if available).
+10. Determine whether deactivation occurred due to inactivity, Workday status change, synchronization issue, or other integration event.
+11. Update incident work notes with findings.
+12. Route or engage MuleSoft/Workday support teams if additional action is required.
 
-## Confirmation criteria
+## Permitted Diagnostic Tools
+- `salesforce_user_search`: Search users by email, username, or employee number.
+- `salesforce_get_user_details`: Retrieve full user record.
+- `salesforce_execute_soql`: Query `SetupAuditTrail`.
+- Kibana / MuleSoft API lookup (read-only integration log inspection).
+
+## Confirmation Criteria
 Confirmed only when:
-- The user exists in SFDC NA and `IsActive` is false (observed, not inferred), AND
-- The deactivating actor is identified from audit evidence: DA user, or Mulesoft user with matching Kibana log evidence.
+- User is uniquely resolved in NA Org.
+- `User.IsActive == False`.
+- `SetupAuditTrail.CreatedById` matches the MuleSoft Integration User.
 
-If the user is inactive but the actor cannot be established, report `insufficient_evidence` with the observed inactive status as a finding. Do not guess the actor.
-
-## Alternative explanations
-- User is active: not this issue.
-- User not in NA: LOGIN-1.
-- Deactivation caused by inactivity suspension: see the Federation ID suspended skill (LOGIN-5 in the SOP).
-- Mulesoft deactivation may stem from an upstream Workday change (rehire, termination, data fix); do not assume.
-
-## Insufficient-evidence behavior
-- Audit history or Kibana unavailable: `insufficient_evidence`, escalate to the Mulesoft point of contact.
-- Never treat a tool error as `IsActive = false`.
+## Alternative Explanations
+- If `SetupAuditTrail.CreatedById` matches `DelegateGroupMember`: Classify as Delegated Admin deactivation (LOGIN-3A).
+- If `IsActive == True`: Account is active; evaluate Federation ID issues (LOGIN-4, LOGIN-5, LOGIN-6).
+- If user not found in NA Org: Follow LOGIN-1 / LOGIN-1B.
 
 # Resolution
-## Required confirmed diagnosis
-`status: confirmed`, `issue_code: LOGIN-3`, with evidence refs for the inactive status and the actor.
 
-## Remediation procedure
-Per actor, no direct reactivation by the agent:
-- DA-deactivated: tell the user to raise a Manage User RITM. Add a work note with the finding and RITM instructions.
-- Mulesoft-deactivated: record the Kibana evidence, engage the Mulesoft and Workday teams to find the root cause, and assign or notify them via ServiceNow.
-- Unknown actor: escalate to a human operator.
+## Required Confirmed Diagnosis
+- `issue_code: LOGIN-3`
+- `status: confirmed` / `escalation_required`
 
-## Preconditions and permitted operations
-- Permitted: ServiceNow work notes, user communication, assignment updates.
-- Prohibited: reactivating the user or any Salesforce write unless a future approved operation is added to the policy layer.
+## Remediation Procedure
+1. Investigate the deactivation reason with the MuleSoft team and inspect integration payload/Kibana logs.
+2. Cross-reference upstream HR status with the Workday team to check for termination, leave of absence, or rehire events.
+3. Update ServiceNow incident work notes with comprehensive integration findings.
+4. Route or engage the MuleSoft/Workday support teams for automated synchronization correction or account remediation.
 
-## Expected result
-The user is directed to the correct fulfilment path (RITM) or the incident is with the team able to find the root cause.
-
-## Failure and rollback handling
-Notes and assignment changes are reversible. If notification fails, retry once, then escalate.
+## Preconditions and Permitted Operations
+- Permitted: ServiceNow work notes update, integration log inspection, ticket routing to MuleSoft/Workday queue.
+- Prohibited: Directly modifying `User.IsActive = True` in Salesforce without resolving upstream Workday synchronization state.
 
 # HITL
-- Approval required: only for the team-routing or communication actions when policy demands. There is no Salesforce write.
-- Present to approver (if invoked): incident ID, user, inactive status, actor and timestamp, Kibana evidence if used, proposed action.
-- Valid approval: explicit and bound to this action proposal.
+- Present to operator: Incident ID, user details, MuleSoft deactivation timestamp, Kibana payload findings, target escalation group.
+- Valid approval: Explicit confirmation to document findings and engage MuleSoft/Workday support teams.
 
 # Verification
-- Expected state: work note and routing are recorded on the incident; the evidence matches what was reported.
-- Checks: re-read the incident; for any reactivation done later by humans, re-read `IsActive`.
-- Failure and escalation: missing note or assignment, or contradictory audit data, goes to a human operator.
-
-# Safety Rules
-- Never invent evidence or user identifiers.
-- Never treat historical similarity as proof.
-- Never execute unauthorized changes.
-- Escalate when evidence or authorization is insufficient.
-- Never name the deactivating actor without audit evidence.
+- Expected state: Incident work notes updated with MuleSoft deactivation payload details and routed to integration support.
+- Checks: Confirm `User.IsActive == False` remains intact pending integration remediation.

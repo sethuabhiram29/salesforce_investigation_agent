@@ -66,7 +66,7 @@ class TestDiagnosisAgent(unittest.TestCase):
         diag = updated_state.get("diagnosis_result", {})
 
         self.assertEqual(diag.get("status"), "confirmed")
-        self.assertEqual(diag.get("issue_code"), "LOGIN-3")
+        self.assertEqual(diag.get("issue_code"), "LOGIN-3A")
         self.assertEqual(diag.get("observed_values", {}).get("deactivation_actor"), "Delegated Administrator")
         self.assertEqual(diag.get("recommended_action"), "resolution")
 
@@ -91,10 +91,11 @@ class TestDiagnosisAgent(unittest.TestCase):
 
         # Should dynamically pivot from LOGIN-4 to LOGIN-3 because user is inactive!
         self.assertEqual(diag.get("status"), "confirmed")
-        self.assertEqual(diag.get("issue_code"), "LOGIN-3")
+        self.assertEqual(diag.get("issue_code"), "LOGIN-3A")
         self.assertEqual(diag.get("observed_values", {}).get("deactivation_actor"), "Delegated Administrator")
 
     def test_ambiguous_or_missing_user_does_not_fabricate(self):
+        # 1. Unknown user in all orgs traverses knowledge graph and confirms LOGIN-1 (reroute to HCL Service Desk)
         state: InvestigationState = {
             "incident": {
                 "incident_id": "INC1004",
@@ -110,9 +111,21 @@ class TestDiagnosisAgent(unittest.TestCase):
 
         updated_state = self.agent.run(state)
         diag = updated_state.get("diagnosis_result", {})
-        self.assertEqual(diag.get("status"), "ambiguous_identity")
-        self.assertEqual(len(diag.get("findings", [])), 0)
-        self.assertEqual(diag.get("recommended_action"), "escalate")
+        self.assertEqual(diag.get("status"), "confirmed")
+        self.assertEqual(diag.get("issue_code"), "LOGIN-1")
+
+        # 2. Missing user where no target identity could be resolved at all returns ambiguous_identity
+        missing_state: InvestigationState = {
+            "incident": {
+                "incident_id": "INC1004B",
+                "short_description": "Can't login",
+                "description": "Vague incident with no user identifier",
+            },
+            "affected_user": {},
+        }
+        missing_diag = self.agent.run(missing_state).get("diagnosis_result", {})
+        self.assertEqual(missing_diag.get("status"), "ambiguous_identity")
+        self.assertEqual(missing_diag.get("recommended_action"), "escalate")
 
     def test_cross_domain_fallback_for_vague_ticket(self):
         # Sarah Connor has general "Cannot access salesforce" ticket.

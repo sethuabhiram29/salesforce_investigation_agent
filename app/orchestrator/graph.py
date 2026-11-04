@@ -96,6 +96,9 @@ def node_escalation(state: InvestigationState) -> InvestigationState:
 # --- Conditional Routing Functions ---
 
 def route_after_triage(state: InvestigationState) -> Literal["diagnosis", "escalation"]:
+    triage = state.get("triage_result") or {}
+    if triage.get("is_ambiguous"):
+        return "escalation"
     # Never abort or escalate prematurely simply because a user was not found during triage!
     # The Knowledge Graph contains a dedicated swimlane for 'User not found in any org'
     # (NODE_SEARCH_MAIN_ORG -> NODE_USER_FOUND_MAIN -> NODE_SEARCH_OTHER_ORGS -> NODE_USER_FOUND_OTHER -> TERMINAL_LOGIN_1).

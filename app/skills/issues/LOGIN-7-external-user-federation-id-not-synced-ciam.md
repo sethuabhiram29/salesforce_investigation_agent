@@ -1,79 +1,77 @@
 ---
 issue_code: LOGIN-7
-title: External User Federation ID Not Synced With CIAM
+title: FederationIdentifier in Salesforce Does Not Match FederationIdentifier Maintained in CIAM
 domains:
   - LOGIN
-version: 1
+version: 2
+user_type: External
+condition: "User exists in NA Org AND IsActive = True AND External User AND FederationIdentifier requires CIAM validation"
 ---
 
 # Purpose
-An external user cannot sign in because their Federation ID in Salesforce is not in sync with the CIAM system. Applies to external (non-employee) users who are present and active in SFDC NA.
+An external user (e.g. customer portal, partner, or community user) cannot authenticate into Salesforce because their `FederationIdentifier` does not match the identity record maintained in the Customer Identity and Access Management (CIAM) system. The CIAM Team must be engaged to validate the authoritative UUID, and the Salesforce user record updated upon confirmation.
 
 # Diagnosis
-## Required evidence
-- User present and active in SFDC NA.
-- Federation ID currently in Salesforce.
-- The CIAM federation ID for the user, as provided by the CIAM team point of contact.
 
-## Investigation procedure
-1. Retrieve the incident and caller details from ServiceNow (read-only).
-2. Search SFDC NA for the user. Require a unique, active match; otherwise switch to LOGIN-1 or LOGIN-3.
-3. Confirm the user is external from the evidence (user type, email domain, or incident text).
-4. Read the Federation ID in Salesforce.
-5. Obtain the CIAM federation ID from the CIAM team and compare.
-6. Record all lookups and the CIAM response as evidence.
+## Required Evidence
+- User exists in the primary NA Salesforce organization.
+- `User.IsActive == True`.
+- User confirmed as an **External User** (e.g. `UserType` is community/portal or `FederationIdentifier` follows CIAM UUID format).
+- `User.FederationIdentifier` requires CIAM synchronization.
 
-## Permitted diagnostic tools
-- Salesforce user search and detail retrieval (read-only).
-- ServiceNow: retrieve incident, user (read-only).
-- Historical incidents and knowledge graph lookups (context only).
+## Investigation Procedure
+1. Retrieve incident and caller details.
+2. Search user in NA Org using Salesforce SOSL Search (`salesforce_user_search` / `salesforce_execute_sosl`).
+3. If user not found in NA, follow Login-1A/Login-1B process.
+4. Verify user account is active (`User.IsActive == True`).
+5. Retrieve `EmployeeNumber` and `FederationIdentifier` from Salesforce User record.
+6. Determine user type.
+7. If `FederationIdentifier` does not match `EmployeeNumber` and `FederationIdentifier` follows CIAM UUID format, classify user as External User.
+8. Contact CIAM Team to validate the `FederationIdentifier` associated with the user.
+9. Compare CIAM `FederationIdentifier` with Salesforce `FederationIdentifier`.
+10. Update Salesforce `FederationIdentifier` if required.
+11. Update work notes with findings and actions performed.
+12. Inform user and resolve incident.
 
-## Confirmation criteria
+## Permitted Diagnostic Tools
+- `salesforce_user_search`: Search user by username or email.
+- `salesforce_get_user_details`: Retrieve full user record (`UserType`, `FederationIdentifier`, `ContactId`).
+- ServiceNow: Retrieve incident and user details (read-only).
+
+## Confirmation Criteria
 Confirmed only when:
-- The user is unique, active, and external, AND
-- The Salesforce Federation ID is observed and differs from the CIAM federation ID provided by the CIAM team.
+- User is uniquely resolved in NA Org.
+- `User.IsActive == True`.
+- User confirmed as an External User.
+- Salesforce `FederationIdentifier` is confirmed to require CIAM synchronization.
 
-## Alternative explanations
-- Employee user whose Federation ID differs from Employee ID: LOGIN-4.
-- IDs match: this issue is contradicted; check other causes.
-- User not active or not found: LOGIN-3 or LOGIN-1.
-- Multiple matches: `ambiguous_identity`.
-
-## Insufficient-evidence behavior
-- No CIAM value available: `insufficient_evidence`, request it from the CIAM point of contact. Never assume the CIAM value.
+## Alternative Explanations
+- If user is an Internal Employee: Route to LOGIN-4 (missing) or LOGIN-6 (Azure mismatch).
+- If `User.IsActive == False`: Route to LOGIN-3 / LOGIN-3A.
 
 # Resolution
-## Required confirmed diagnosis
-`status: confirmed`, `issue_code: LOGIN-7`, with evidence refs for both the Salesforce and CIAM values.
 
-## Remediation procedure
-1. Engage the CIAM team point of contact through ServiceNow assignment or notification, with the evidence.
-2. Align the Federation ID with the CIAM value through the approved process. The agent only writes if a supported operation and approval exist.
-3. Add a work note with the finding and actions.
+## Required Confirmed Diagnosis
+- `issue_code: LOGIN-7`
+- `status: confirmed`
 
-## Preconditions and permitted operations
-- Permitted: ServiceNow notes, assignment, notification.
-- Prohibited: writing any Federation ID not confirmed by CIAM.
+## Remediation Procedure
+1. Engage the CIAM Team point of contact to retrieve the authoritative external UUID mapping.
+2. Compare CIAM `FederationIdentifier` with Salesforce `FederationIdentifier`.
+3. Upon confirmation from the CIAM Team, formulate proposal to update Salesforce `User.FederationIdentifier` to the validated CIAM UUID.
+4. Submit for Human-in-the-Loop (HITL) approval.
+5. Execute `salesforce_update_user(user_id, "FederationIdentifier", ciam_uuid)`.
+6. Verify update completed successfully by re-querying Salesforce.
+7. Update incident work notes with findings and actions performed, inform the user, and resolve incident.
 
-## Expected result
-Federation ID in Salesforce equals the CIAM federation ID.
-
-## Failure and rollback handling
-No Salesforce change by default. If a later approved update fails, record the error and escalate; rollback restores the previous value only with approval.
+## Preconditions and Permitted Operations
+- Permitted: Engaging CIAM team, updating `User.FederationIdentifier` with CIAM-confirmed UUID post-approval, updating work notes.
+- Prohibited: Updating `FederationIdentifier` with employee numbers for external users; direct writes without CIAM team validation.
 
 # HITL
-- Approval required: always before any Salesforce write.
-- Present to approver: incident ID, user, current and CIAM values, reason, risk (wrong value breaks external login or links the wrong identity), expected outcome.
-- Valid approval: explicit and bound to the exact proposal.
+- Present to operator: Incident ID, external user details, current Salesforce `FederationIdentifier`, CIAM-validated UUID.
+- Valid approval: Explicit confirmation to update Salesforce `FederationIdentifier` to the CIAM UUID.
 
 # Verification
-- Expected state: Salesforce Federation ID equals the CIAM value.
-- Checks: re-read the user record and compare to the CIAM-confirmed value.
-- Failure and escalation: any mismatch, or CIAM revising the value, goes to a human operator.
-
-# Safety Rules
-- Never invent evidence or user identifiers.
-- Never treat historical similarity as proof.
-- Never execute unauthorized changes.
-- Escalate when evidence or authorization is insufficient.
-- Never use an employee ID as the Federation ID for external users unless the CIAM team confirms it.
+- Expected state: `User.FederationIdentifier == ciam_uuid` AND `User.IsActive == True`.
+- Checks: Re-query Salesforce user record to confirm `FederationIdentifier` matches CIAM value.

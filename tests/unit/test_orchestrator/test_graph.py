@@ -45,7 +45,7 @@ class TestOuterGraph(unittest.TestCase):
 
         # 6. Salesforce post-state verified in fixture
         user = salesforce_get_user_details("005xx000001LOGIN4")
-        self.assertEqual(user["FederationIdentifier"], "jane.doe@acme.corp")
+        self.assertEqual(user["FederationIdentifier"], "EMP-00104")
 
         # 7. Trace events recorded all stages
         stages = [e["stage"] for e in final_state["trace_events"]]

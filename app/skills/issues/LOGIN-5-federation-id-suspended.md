@@ -1,80 +1,78 @@
 ---
 issue_code: LOGIN-5
-title: User Federation ID Suspended
+title: FederationIdentifier Has Been Replaced With a Suspended/Frozen/Invalid Value
 domains:
   - LOGIN
-version: 1
+version: 2
+user_type: Internal
+condition: "User exists in NA Org AND IsActive = True AND Internal User AND FederationIdentifier contains suspended/frozen"
 ---
 
 # Purpose
-The caller cannot sign in because their Federation ID has been suspended due to inactivity in the application. Applies when the user exists in the SFDC NA org and the symptom points to a suspended or inactivity-related federation state.
+An active internal user cannot authenticate via Single Sign-On because their Salesforce `FederationIdentifier` has been replaced with a suspended, frozen, or invalid value (e.g., automated inactivity deactivation marker or identity freeze in Okta/IdP). Direct modification by the automated agent is prohibited; the user must be directed to submit a Manage User RITM in ServiceNow for authorized correction.
 
 # Diagnosis
-## Required evidence
-- User record found in SFDC NA (uniquely identified).
-- Evidence that the Federation ID is suspended due to inactivity (suspension indicator and last-activity evidence as exposed by the available tools).
-- Employee ID for the user.
 
-## Investigation procedure
-1. Retrieve the incident and caller profile from ServiceNow (read-only) to obtain identifiers and Employee ID.
-2. Search SFDC NA for the user (global-search equivalent). Require a unique match; if not found, switch to LOGIN-1.
-3. Read the user's Federation ID state, active status and last-login/last-activity data.
-4. Determine whether the suspension is due to inactivity, using the evidence returned, not assumption.
-5. Record each lookup as evidence with its reference ID.
+## Required Evidence
+- User exists in the primary NA Salesforce organization.
+- `User.IsActive == True`.
+- User confirmed as an Internal User.
+- `User.FederationIdentifier` contains a value indicating suspension (e.g. substring `"suspended"`, `"frozen"`, or invalid suspension token).
+- `User.EmployeeNumber` is recorded.
 
-## Permitted diagnostic tools
-- Salesforce user search and user detail retrieval, including login history if permitted (read-only).
-- ServiceNow: retrieve incident, user (read-only).
-- Historical incidents and knowledge graph lookups (context only).
+## Investigation Procedure
+1. Retrieve incident and caller details.
+2. Search user in NA Org using Salesforce SOSL Search (`salesforce_user_search` / `salesforce_execute_sosl`).
+3. If user not found in NA, follow Login-1A/Login-1B process.
+4. Verify user account is active (`User.IsActive == True`).
+5. Retrieve `EmployeeNumber` and `FederationIdentifier` from User record.
+6. Verify user is an Internal User.
+7. Validate whether `FederationIdentifier` contains a suspended or frozen value.
+8. If suspended value is identified, classify as Federation ID Suspended issue.
+9. Update incident work notes with findings.
+10. Inform user to raise Manage User RITM for `FederationIdentifier` correction.
+11. Resolve or close incident as per support process.
 
-## Confirmation criteria
+## Permitted Diagnostic Tools
+- `salesforce_user_search`: Search user by username, email, or employee number.
+- `salesforce_get_user_details`: Retrieve full user record.
+- ServiceNow: Retrieve incident and user details (read-only).
+
+## Confirmation Criteria
 Confirmed only when:
-- Exactly one user is found in SFDC NA, AND
-- The Federation ID is observed as suspended, AND
-- The evidence attributes the suspension to inactivity.
+- User is uniquely resolved in NA Org.
+- `User.IsActive == True`.
+- User confirmed as an Internal User.
+- `User.FederationIdentifier` is confirmed to contain `"suspended"` or `"frozen"`.
 
-## Alternative explanations
-- Federation ID missing or mismatched: LOGIN-4.
-- User deactivated: LOGIN-3.
-- Suspended for a reason other than inactivity: report `insufficient_evidence` or `escalation_required`; do not label it inactivity.
-- Multiple matches: `ambiguous_identity`.
-
-## Insufficient-evidence behavior
-- If the suspension cause cannot be determined from available data, do not confirm; escalate.
-- A failed lookup is never evidence that the Federation ID is not suspended.
+## Alternative Explanations
+- If `FederationIdentifier` is null or empty: Route to LOGIN-4.
+- If `FederationIdentifier` is populated but does not match `EmployeeNumber` without suspension markers: Route to LOGIN-6.
+- If `User.IsActive == False`: Route to LOGIN-3 / LOGIN-3A.
 
 # Resolution
-## Required confirmed diagnosis
-`status: confirmed`, `issue_code: LOGIN-5`, with evidence refs for the user record and the suspension state.
 
-## Remediation procedure
-No direct Salesforce change by the agent:
-1. Request the user to raise a Manage User RITM to update the Federation ID to the Employee ID.
-2. Add a work note with the finding, the Employee ID and the RITM instructions.
+## Required Confirmed Diagnosis
+- `issue_code: LOGIN-5`
+- `status: confirmed`
 
-## Preconditions and permitted operations
-- Permitted: ServiceNow work note and user communication.
-- Prohibited: modifying the Federation ID or any other Salesforce field.
+## Remediation Procedure
+Direct Salesforce mutation of suspended Federation IDs is restricted:
+1. Update ServiceNow incident work notes detailing:
+   - Observed suspended/frozen value in `User.FederationIdentifier`.
+   - Verified `EmployeeNumber`.
+   - Requirement for authorized identity remediation.
+2. Formulate user guidance informing the user to raise a **Manage User RITM** in ServiceNow to correct their `FederationIdentifier` back to their corporate Employee Number.
+3. Transmit notification to the user and resolve/close the incident as per standard support process.
 
-## Expected result
-The user has clear instructions to raise the RITM and the incident documents the evidence.
-
-## Failure and rollback handling
-If the notification fails, retry once, then escalate. No Salesforce change exists to roll back.
+## Preconditions and Permitted Operations
+- Permitted: ServiceNow work notes update, user communication with Manage User RITM guidance, incident closure.
+- Prohibited: Directly modifying `User.FederationIdentifier` in Salesforce without an approved Manage User RITM.
 
 # HITL
-- Approval required: only if policy requires it before sending communication or reassigning. No Salesforce write.
-- Present to approver (if invoked): incident ID, user, suspension evidence, proposed message.
-- Valid approval: explicit and bound to this specific proposal.
+- Present to operator: Incident ID, user details, observed suspended `FederationIdentifier`, `EmployeeNumber`, Manage User RITM guidance.
+- Valid approval: Explicit confirmation to deliver Manage User RITM instructions and resolve ticket.
 
 # Verification
-- Expected state: work note and user communication are recorded on the incident.
-- Checks: re-read the incident. After the user's RITM is fulfilled by the owning team, a re-read of the user should show the Federation ID equal to the Employee ID.
-- Failure and escalation: missing note, or the state is unchanged after the RITM, goes to a human operator.
-
-# Safety Rules
-- Never invent evidence or user identifiers.
-- Never treat historical similarity as proof.
-- Never execute unauthorized changes.
-- Escalate when evidence or authorization is insufficient.
-- Never claim inactivity as the cause without supporting evidence.
+- Expected state: ServiceNow work notes and user communication contain complete Manage User RITM guidance for FederationIdentifier correction.
+- Checks: Re-query incident to confirm delivery of RITM instructions.

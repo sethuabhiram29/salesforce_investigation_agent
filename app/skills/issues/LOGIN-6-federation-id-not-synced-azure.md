@@ -1,79 +1,82 @@
 ---
 issue_code: LOGIN-6
-title: Federation ID Not Synced With Azure (Re-hire Process)
+title: FederationIdentifier Does Not Match Identity Mapping Maintained for Internal User
 domains:
   - LOGIN
-version: 1
+version: 2
+user_type: Internal
+condition: "User exists in NA Org AND IsActive = True AND Internal User AND FederationIdentifier IS NOT NULL AND FederationIdentifier != EmployeeNumber"
 ---
 
 # Purpose
-A rehired user cannot sign in because the Federation ID in Salesforce does not match the one tagged to their new employee ID in Azure. Applies when the user is present and active in SFDC NA and the incident suggests a rehire, a new employee ID, or an Azure identity mismatch.
+An active internal employee cannot sign in via Single Sign-On because their Salesforce `FederationIdentifier` is populated but does not match the authoritative corporate identity mapping maintained in Azure AD / Workday (e.g., following a re-hire process, employee number change, or Azure user principal synchronization mismatch). The Azure Team must be engaged for validation, and the Salesforce record updated upon confirmation.
 
 # Diagnosis
-## Required evidence
-- User present and active in SFDC NA.
-- Current Federation ID in Salesforce.
-- The correct Federation ID tagged to the new employee ID, as confirmed by the Azure team (this value is not derivable from Salesforce alone).
-- Evidence the user is a rehire or has a new employee ID (from the incident or ServiceNow user data).
 
-## Investigation procedure
-1. Retrieve the incident and caller profile from ServiceNow (read-only); note the current employee number.
-2. Search SFDC NA for the user. Require a unique match that is active; if not found switch to LOGIN-1, if inactive switch to LOGIN-3.
-3. Read the Federation ID and check whether it is correct for the current employee ID.
-4. If a correct Federation ID cannot be established from available evidence, flag that the Azure team point of contact must provide it.
-5. Record the Azure team's response as evidence when received.
+## Required Evidence
+- User exists in the primary NA Salesforce organization.
+- `User.IsActive == True`.
+- User confirmed as an Internal User.
+- `User.FederationIdentifier` is NOT null and NOT empty.
+- `User.FederationIdentifier != User.EmployeeNumber`.
 
-## Permitted diagnostic tools
-- Salesforce user search and detail retrieval (read-only).
-- ServiceNow: retrieve incident, user (read-only).
-- Historical incidents and knowledge graph lookups (context only).
+## Investigation Procedure
+1. Retrieve incident and caller details.
+2. Search user in NA Org using Salesforce SOSL Search (`salesforce_user_search` / `salesforce_execute_sosl`).
+3. If user not found in NA, follow Login-1A/Login-1B process.
+4. Verify user account is active (`User.IsActive == True`).
+5. Retrieve `EmployeeNumber` and `FederationIdentifier` from User record.
+6. Verify user is an Internal User.
+7. Compare `EmployeeNumber` and `FederationIdentifier`.
+8. If `FederationIdentifier` is populated but does not match `EmployeeNumber`, classify as Federation ID synchronization issue.
+9. Contact Azure Team to validate the `FederationIdentifier` currently mapped to the employee.
+10. Compare Azure validation result with Salesforce value.
+11. Update Salesforce `FederationIdentifier` if required (aligning to authoritative `EmployeeNumber` upon Azure confirmation).
+12. Verify update completed successfully.
+13. Update work notes and inform the user.
 
-## Confirmation criteria
+## Permitted Diagnostic Tools
+- `salesforce_user_search`: Search user by username, email, or employee number.
+- `salesforce_get_user_details`: Retrieve full user record.
+- ServiceNow: Retrieve incident and user details (read-only).
+
+## Confirmation Criteria
 Confirmed only when:
-- The user is found, unique and active, AND
-- The Federation ID in Salesforce is observed and verified as incorrect against the Azure-confirmed value, or the Azure team confirms the correct value differs.
+- User is uniquely resolved in NA Org.
+- `User.IsActive == True`.
+- User confirmed as an Internal User.
+- `User.FederationIdentifier` is populated.
+- `User.FederationIdentifier != User.EmployeeNumber`.
 
-## Alternative explanations
-- Federation ID simply missing or not equal to the Employee ID: LOGIN-4.
-- Federation ID is correct: not this issue; investigate other causes.
-- Not a rehire: lower confidence; request clarification.
-- Multiple matches: `ambiguous_identity`.
-
-## Insufficient-evidence behavior
-- No Azure confirmation available: status `insufficient_evidence`, request the Azure contact; never infer or fabricate the correct Federation ID.
+## Alternative Explanations
+- If `FederationIdentifier` is blank or null: Route to LOGIN-4.
+- If `FederationIdentifier` contains suspended or frozen tokens: Route to LOGIN-5.
+- If user is external and identifier is a CIAM UUID: Route to LOGIN-7.
+- If `User.IsActive == False`: Route to LOGIN-3 / LOGIN-3A.
 
 # Resolution
-## Required confirmed diagnosis
-`status: confirmed`, `issue_code: LOGIN-6`, with evidence refs for the Salesforce state and Azure confirmation.
 
-## Remediation procedure
-1. Contact the Azure team point of contact to get the correct Federation ID tagged to the new employee ID (via ServiceNow assignment or notification).
-2. Add a work note documenting the current value, the mismatch and the request.
-3. Any Salesforce update of the Federation ID follows the approved process and is not performed by the agent unless a supported operation and approval exist.
+## Required Confirmed Diagnosis
+- `issue_code: LOGIN-6`
+- `status: confirmed`
 
-## Preconditions and permitted operations
-- Permitted: ServiceNow work notes and notification or assignment to the Azure team.
-- Prohibited: writing a Federation ID value not confirmed by the Azure team.
+## Remediation Procedure
+1. Contact the Azure Team to validate the authoritative `FederationIdentifier` mapped to the employee in Azure AD / Workday.
+2. Compare the Azure validation result with the Salesforce value.
+3. Upon Azure team confirmation, formulate a change proposal to update Salesforce `User.FederationIdentifier` with the verified `EmployeeNumber`.
+4. Submit for Human-in-the-Loop (HITL) approval.
+5. Execute `salesforce_update_user(user_id, "FederationIdentifier", verified_employee_number)`.
+6. Verify update completed successfully by re-querying Salesforce.
+7. Update incident work notes with Azure alignment findings and inform the user.
 
-## Expected result
-The correct Federation ID is obtained from the Azure team and the user's Salesforce record is aligned through the approved process.
-
-## Failure and rollback handling
-No Salesforce change by the agent. If the Azure team does not respond within the escalation window, escalate to a human operator.
+## Preconditions and Permitted Operations
+- Permitted: Engaging Azure team, updating `User.FederationIdentifier` to match confirmed `EmployeeNumber` post-approval, updating work notes.
+- Prohibited: Writing an arbitrary or unconfirmed Federation ID; using email or username as Federation ID.
 
 # HITL
-- Approval required: always before any Salesforce update; the update itself is only possible if a supported operation exists.
-- Present to approver: incident ID, user, current Federation ID, Azure-confirmed value, employee ID, reason, risk of linking the wrong identity.
-- Valid approval: explicit and bound to this exact proposal and value.
+- Present to operator: Incident ID, user details, current Salesforce `FederationIdentifier`, authoritative `EmployeeNumber`, Azure team confirmation status.
+- Valid approval: Explicit confirmation to update Salesforce `FederationIdentifier` to match `EmployeeNumber`.
 
 # Verification
-- Expected state: Salesforce Federation ID equals the Azure-confirmed value and the user is active.
-- Checks: re-read the user record after the update; confirm the user can authenticate if the user confirms.
-- Failure and escalation: mismatch persists, or the Azure value is revised, goes to a human operator.
-
-# Safety Rules
-- Never invent evidence or user identifiers.
-- Never treat historical similarity as proof.
-- Never execute unauthorized changes.
-- Escalate when evidence or authorization is insufficient.
-- Never derive the correct Federation ID without Azure team confirmation.
+- Expected state: `User.FederationIdentifier == EmployeeNumber` AND `User.IsActive == True`.
+- Checks: Re-query Salesforce user record to confirm `FederationIdentifier` equals `EmployeeNumber`.

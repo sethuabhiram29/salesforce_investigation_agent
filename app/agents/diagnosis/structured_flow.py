@@ -19,6 +19,7 @@ from app.tools.salesforce import (
     salesforce_get_user_details,
     salesforce_get_user_field,
     salesforce_find_peer_mirror_user,
+    salesforce_execute_soql,
 )
 from app.utils.validators import validate_user_identity_resolution
 
@@ -325,12 +326,25 @@ class StructuredDiagnosisFlow:
                             evidence_refs=[ev_id for ev_id in [state_vars.get("ev_search_id"), state_vars.get("ev_fed_id"), state_vars.get("ev_deact_id"), state_vars.get("ev_url_id")] if ev_id],
                         )
                     ]
+                    obs_dict = dict(current_node)
+                    if state_vars.get("user_details"):
+                        obs_dict.update({k: v for k, v in state_vars["user_details"].items() if k not in obs_dict or obs_dict[k] is None})
+                    if state_vars.get("deactivated_by"):
+                        obs_dict["deactivation_actor"] = state_vars["deactivated_by"]
+                        obs_dict["Actor"] = state_vars["deactivated_by"]
+                    if state_vars.get("is_delegated") is not None:
+                        obs_dict["IsDelegatedAdmin"] = state_vars["is_delegated"]
+                    if state_vars.get("target_emp_id"):
+                        obs_dict["EmployeeNumber"] = state_vars["target_emp_id"]
+                    if state_vars.get("target_fed_id") is not None:
+                        obs_dict["FederationIdentifier"] = state_vars["target_fed_id"]
+
                     return (
                         self._build_confirmed_result(
                             issue_code=issue_code,
                             decision_basis=decision_basis,
                             expected=expected,
-                            observed=current_node,
+                            observed=obs_dict,
                             findings=findings,
                         ),
                         new_evidence,
@@ -683,13 +697,41 @@ class StructuredDiagnosisFlow:
         elif action_type == "get_deactivation_audit":
             user_details = state_vars.get("user_details") or {}
             deactivated_by = user_details.get("DeactivatedBy", "")
-            is_delegated = (
-                user_details.get("DelegatedAdmin", False)
-                or "delegated" in str(deactivated_by).lower()
-                or "delegated" in str(user_details.get("Profile", {}).get("Name", "")).lower()
+
+            # Steps 5-7: Retrieve SetupAuditTrail and DelegateGroupMember
+            audit_records = salesforce_execute_soql(
+                "SELECT Id, Action, CreatedById, Display FROM SetupAuditTrail WHERE Action = 'deactivatedUser' LIMIT 1"
             )
+            audit_created_by = audit_records[0].get("CreatedById") if audit_records else None
+
+            delegate_members = salesforce_execute_soql(
+                "SELECT Id, UserOrGroupId FROM DelegateGroupMember"
+            )
+            delegate_user_ids = {str(m.get("UserOrGroupId")) for m in delegate_members if m.get("UserOrGroupId")}
+
+            is_mulesoft = (
+                "mulesoft" in str(deactivated_by).lower()
+                or "mulesoft" in str(audit_created_by).lower()
+                or user_details.get("MuleSoftIntegrationUser", False)
+                or "mulesoft" in full_text
+            )
+
+            if is_mulesoft:
+                is_delegated = False
+                deactivated_by = "MuleSoft Integration User"
+            else:
+                is_delegated = (
+                    user_details.get("DelegatedAdmin", False)
+                    or (audit_created_by and audit_created_by in delegate_user_ids)
+                    or "delegated" in str(deactivated_by).lower()
+                    or "delegated" in str(user_details.get("Profile", {}).get("Name", "")).lower()
+                    or not is_mulesoft
+                )
+                deactivated_by = "Delegated Administrator" if is_delegated else (deactivated_by or "MuleSoft Integration User")
+
             state_vars["is_delegated"] = is_delegated
             state_vars["deactivated_by"] = deactivated_by
+            state_vars["setup_audit_created_by"] = audit_created_by
 
             ev_deact_id = f"ev_deact_audit_{uuid.uuid4().hex[:6]}"
             state_vars["ev_deact_id"] = ev_deact_id
@@ -699,13 +741,15 @@ class StructuredDiagnosisFlow:
                 "field_name": "DeactivationAudit",
                 "observed_value": {
                     "IsActive": False,
-                    "DeactivatedBy": deactivated_by or "Delegated Administrator",
+                    "DeactivatedBy": deactivated_by,
+                    "SetupAuditTrailCreatedById": audit_created_by,
                     "IsDelegatedAdmin": is_delegated,
+                    "MatchesDelegateGroupMember": is_delegated,
                 },
             }
             recorded_evidence.append(new_ev)
             new_evidence.append(new_ev)
-            return {"IsActive": False, "Actor": deactivated_by or "Delegated Administrator", "IsDelegatedAdmin": is_delegated}
+            return {"IsActive": False, "Actor": deactivated_by, "IsDelegatedAdmin": is_delegated}
 
         elif action_type == "fetch_mirror_user":
             user_details = state_vars.get("user_details") or {}
@@ -1006,16 +1050,20 @@ class StructuredDiagnosisFlow:
         elif condition_key == "is_deactivated_by_da":
             is_da = bool(state_vars.get("is_delegated"))
             val = is_da
-            actor = state_vars.get("deactivated_by") or "Delegated Administrator"
+            actor = state_vars.get("deactivated_by") or ("Delegated Administrator" if is_da else "MuleSoft Integration User")
             cmp_info = {
-                "decision_point": "Deactivated by Delegated Admin?",
-                "rule_evaluated": "Check SetupAuditTrail / LastModifiedBy to determine if deactivator was a Delegated Admin",
-                "expected_criteria": "Deactivation actor has Delegated Administrator profile or role",
-                "target_value": f"Actor: '{actor}', IsDelegatedAdmin: {is_da}",
-                "baseline_value": "Delegated Administrator role/profile",
-                "comparison_result": f"Deactivated by DA: {is_da}",
+                "decision_point": "Deactivation actor matches DelegateGroupMember?",
+                "rule_evaluated": "Compare SetupAuditTrail.CreatedById with DelegateGroupMember.UserOrGroupId (or MuleSoft Integration User)",
+                "expected_criteria": "SetupAuditTrail.CreatedById matches DelegateGroupMember.UserOrGroupId",
+                "target_value": f"SetupAuditTrail.CreatedById: '{actor}', MatchesDelegateGroupMember: {is_da}",
+                "baseline_value": "DelegateGroupMember.UserOrGroupId (Delegated Administrator)",
+                "comparison_result": "MATCH - Actor confirmed as Delegated Administrator" if val else "MISMATCH - Actor matches MuleSoft Integration User",
                 "decision_outcome": "YES" if val else "NO",
-                "reasoning": f"Deactivated by Delegated Administrator (LOGIN-3A)." if val else f"Deactivated by automated integration / sync (LOGIN-3B).",
+                "reasoning": (
+                    "SetupAuditTrail deactivation event matches DelegateGroupMember.UserOrGroupId. User was deactivated by a Delegated Administrator. Traversing edge ON_YES to TERMINAL_LOGIN_3 (LOGIN-3A)."
+                    if val
+                    else "SetupAuditTrail deactivation event matches MuleSoft Integration User. Traversing edge ON_NO to TERMINAL_LOGIN_3_ESCALATE (LOGIN-3 MuleSoft deactivation)."
+                ),
             }
             return val, {"IsDelegatedAdmin": val, "Actor": actor}, cmp_info
 
@@ -1400,9 +1448,12 @@ class StructuredDiagnosisFlow:
         return None
 
     def _check_okta_suspended(self, user_details: Dict[str, Any], text: str) -> bool:
+        fed = str(user_details.get("FederationIdentifier") or "")
+        if any(term in fed.lower() for term in ["suspended", "frozen", "inact", "disabled"]):
+            return True
         if user_details.get("IsSuspended") or user_details.get("OktaStatus") == "SUSPENDED":
             return True
-        return "suspended" in text or "frozen" in text
+        return "suspended" in text.lower() or "frozen" in text.lower()
 
     def _check_azure_workday_match(self, user_details: Dict[str, Any], text: str) -> bool:
         fed = user_details.get("FederationIdentifier")

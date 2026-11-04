@@ -39,21 +39,38 @@ class CommunicationAgent:
             target_f = action_obj.get('target_field', '')
             prop_v = action_obj.get('proposed_value', '')
             if target_f == "RITMGuidance":
-                message = (
-                    f"Hello {user_name},\n\n"
-                    f"Your Salesforce access issue has been investigated.\n"
-                    f"• Root Cause: Your Salesforce user account was deactivated by a Delegated Administrator.\n"
-                    f"• Resolution Step: Per security policy, automated direct reactivation is not permitted. "
-                    f"Please submit a 'Manage User' Request Item (RITM) in ServiceNow to obtain the required approval for account reactivation.\n"
-                    f"• Ticket Status: Resolved with instructions.\n\n"
-                    f"Once your Manage User RITM is approved, your account will be reactivated automatically."
-                )
-                res_notes = (
-                    f"Automated investigation completed.\n"
-                    f"Issue Code: {issue_code} (User Account Deactivated by Delegated Administrator)\n"
-                    f"Action: User notified via email and work notes to submit a Manage User RITM in ServiceNow for account reactivation.\n"
-                    f"Ticket State: Resolved."
-                )
+                if issue_code in ["LOGIN-5", "LOGIN-005"]:
+                    message = (
+                        f"Hello {user_name},\n\n"
+                        f"Your Salesforce access issue has been investigated.\n"
+                        f"• Root Cause: Your Salesforce Federation Identifier was replaced with a suspended or frozen value.\n"
+                        f"• Resolution Step: Per security policy, automated direct modification is restricted. "
+                        f"Please submit a 'Manage User' Request Item (RITM) in ServiceNow to correct your FederationIdentifier to your Employee Number.\n"
+                        f"• Ticket Status: Resolved with instructions.\n\n"
+                        f"Once your Manage User RITM is approved, your FederationIdentifier will be restored."
+                    )
+                    res_notes = (
+                        f"Automated investigation completed.\n"
+                        f"Issue Code: {issue_code} (FederationIdentifier Suspended/Frozen)\n"
+                        f"Action: User notified via email and work notes to submit a Manage User RITM in ServiceNow for FederationIdentifier correction.\n"
+                        f"Ticket State: Resolved."
+                    )
+                else:
+                    message = (
+                        f"Hello {user_name},\n\n"
+                        f"Your Salesforce access issue has been investigated.\n"
+                        f"• Root Cause: Your Salesforce user account was intentionally deactivated by a Delegated Administrator.\n"
+                        f"• Resolution Step: Per security policy, automated direct reactivation is not permitted. "
+                        f"Please submit a 'Manage User' Request Item (RITM) in ServiceNow to obtain the required approval for account reactivation.\n"
+                        f"• Ticket Status: Resolved with instructions.\n\n"
+                        f"Once your Manage User RITM is approved, your account will be reactivated automatically."
+                    )
+                    res_notes = (
+                        f"Automated investigation completed.\n"
+                        f"Issue Code: {issue_code} (User Account Deactivated by Delegated Administrator)\n"
+                        f"Action: User notified via email and work notes to submit a Manage User RITM in ServiceNow for account reactivation.\n"
+                        f"Ticket State: Resolved."
+                    )
             elif target_f in ["SetupGuide", "Guidance", "Documentation", "Communication"]:
                 action_desc = f"{prop_v}"
                 message = (

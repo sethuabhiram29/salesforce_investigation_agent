@@ -22,6 +22,7 @@ class TestResolutionAgent(unittest.TestCase):
                 "Id": "005xx000001LOGIN4",
                 "Username": "jane.doe@acme.corp",
                 "Email": "jane.doe@acme.corp",
+                "EmployeeNumber": "EMP-00104",
             },
             "diagnosis_result": {
                 "status": "confirmed",
@@ -37,7 +38,7 @@ class TestResolutionAgent(unittest.TestCase):
         self.assertTrue(plan.get("requires_approval"))
         action = plan.get("proposed_action", {})
         self.assertEqual(action.get("target_field"), "FederationIdentifier")
-        self.assertEqual(action.get("proposed_value"), "jane.doe@acme.corp")
+        self.assertEqual(action.get("proposed_value"), "EMP-00104")
         self.assertEqual(updated.get("approval", {}).get("approval_status"), "pending")
 
     def test_refuses_to_plan_without_confirmed_diagnosis(self):

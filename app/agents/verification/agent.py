@@ -53,23 +53,42 @@ class VerificationAgent:
 
         if target_field == "RITMGuidance":
             actual_val = expected_val
-            checks = [
-                "Verify Manage User RITM guidance formulated for requester",
-                "Check User.IsActive == False in Salesforce org (no direct SF write permitted per SOP LOGIN-003)",
-            ]
-            verified = (not is_active)
-            verif_exp_criteria = "Manage User RITM guidance delivered to requester AND User.IsActive == False (no direct SF write per policy)"
-            verif_obs_values = {"User.RITMGuidance": "Delivered", "User.IsActive": is_active}
-            if verified:
-                verif_comparison = "[MATCH] Manage User RITM guidance delivered to requester and user account confirmed in deactivated state per policy"
-                verif_decision_basis = (
-                    f"Verified: Caller guidance to raise Manage User RITM was successfully recorded. "
-                    f"Target user account verified in inactive state (IsActive=False). No unauthorized Salesforce write occurred."
-                )
+            if issue_code in ["LOGIN-5", "LOGIN-005"]:
+                checks = [
+                    "Verify Manage User RITM guidance formulated for requester",
+                    "Check User.IsActive == True in Salesforce org (LOGIN-5 active internal user)",
+                ]
+                verified = is_active
+                verif_exp_criteria = "Manage User RITM guidance delivered to requester AND User.IsActive == True"
+                verif_obs_values = {"User.RITMGuidance": "Delivered", "User.IsActive": is_active}
+                if verified:
+                    verif_comparison = "[MATCH] Manage User RITM guidance delivered to requester and user account confirmed active in Salesforce"
+                    verif_decision_basis = (
+                        f"Verified: Caller guidance to raise Manage User RITM for FederationIdentifier was successfully recorded. "
+                        f"Target user account confirmed active in Salesforce org (IsActive=True). No unauthorized Salesforce write occurred."
+                    )
+                else:
+                    fail_reason = "Target user account is unexpectedly inactive in Salesforce org"
+                    verif_comparison = f"[MISMATCH] {fail_reason}"
+                    verif_decision_basis = f"Verification failed: {fail_reason}."
             else:
-                fail_reason = "Target user account is unexpectedly active in Salesforce org"
-                verif_comparison = f"[MISMATCH] {fail_reason}"
-                verif_decision_basis = f"Verification failed: {fail_reason}."
+                checks = [
+                    "Verify Manage User RITM guidance formulated for requester",
+                    "Check User.IsActive == False in Salesforce org (no direct SF write permitted per SOP LOGIN-003)",
+                ]
+                verified = (not is_active)
+                verif_exp_criteria = "Manage User RITM guidance delivered to requester AND User.IsActive == False (no direct SF write per policy)"
+                verif_obs_values = {"User.RITMGuidance": "Delivered", "User.IsActive": is_active}
+                if verified:
+                    verif_comparison = "[MATCH] Manage User RITM guidance delivered to requester and user account confirmed in deactivated state per policy"
+                    verif_decision_basis = (
+                        f"Verified: Caller guidance to raise Manage User RITM was successfully recorded. "
+                        f"Target user account verified in inactive state (IsActive=False). No unauthorized Salesforce write occurred."
+                    )
+                else:
+                    fail_reason = "Target user account is unexpectedly active in Salesforce org"
+                    verif_comparison = f"[MISMATCH] {fail_reason}"
+                    verif_decision_basis = f"Verification failed: {fail_reason}."
 
         elif target_field in ["SetupGuide", "Guidance", "Documentation", "Communication"]:
             actual_val = expected_val
