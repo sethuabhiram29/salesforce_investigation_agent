@@ -1,0 +1,1265 @@
+{
+  "name": "Master Multi-Domain Investigation Decision Tree Knowledge Graph",
+  "version": "2.0",
+  "start_node_id": "NODE_TRIAGE_AGENT",
+  "domains": [
+    "LOGIN",
+    "APPLICATION",
+    "OBJECT",
+    "RECORD"
+  ],
+  "domain_roots": {
+    "LOGIN": "NODE_TRIAGE_RESULT",
+    "APPLICATION": "NODE_APP_TRIAGE_RESULT"
+  },
+  "nodes": [
+    {
+      "id": "NODE_TRIAGE_AGENT",
+      "name": "Triage Agent",
+      "swimlane": "Incident Triage",
+      "type": "action",
+      "action_type": "triage_incident",
+      "tool_name": "TriageAgent",
+      "description": "Master entry point: ingests incident ticket, performs triage classification, and routes investigation to the appropriate domain decision tree",
+      "domain": "TRIAGE"
+    },
+    {
+      "id": "NODE_TRIAGE_RESULT",
+      "name": "Prompt Result (LOGIN Domain): Affected User, Division/LOB, Mirror User, Login URL",
+      "swimlane": "Wrong Login Url",
+      "type": "action",
+      "action_type": "ingest_triage",
+      "tool_name": "TriageNarrativeParser",
+      "description": "Initial entry point for LOGIN domain decision tree: Ingests Prompt Result containing Affected User, Division / LOB, Mirror User, and Login URL",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_LOGIN_URL_PROVIDED",
+      "name": "Login URL Provided?",
+      "swimlane": "Wrong Login Url",
+      "type": "decision",
+      "condition_key": "has_login_url",
+      "description": "Check whether the incident narrative contains a specific login URL",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_VALIDATE_LOGIN_URL",
+      "name": "Validate Login URL",
+      "swimlane": "Wrong Login Url",
+      "type": "action",
+      "action_type": "validate_url",
+      "tool_name": "salesforce_validate_url",
+      "description": "Validate login URL against approved Salesforce MyDomain patterns",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_APPROVED_URL",
+      "name": "Approved URL?",
+      "swimlane": "Wrong Login Url",
+      "type": "decision",
+      "condition_key": "is_approved_url",
+      "description": "Evaluate if the validated URL is an approved corporate MyDomain",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_SEARCH_MAIN_ORG",
+      "name": "Search user in main org",
+      "swimlane": "User not found in any org",
+      "type": "action",
+      "action_type": "search_user_main_org",
+      "tool_name": "salesforce_user_search",
+      "description": "Search the primary Salesforce org for the target user identity",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_USER_FOUND_MAIN",
+      "name": "Matching User Found in Main Org?",
+      "swimlane": "User not found in any org",
+      "type": "decision",
+      "condition_key": "user_found_in_main_org",
+      "description": "Evaluate if the user record was resolved in the main Salesforce org",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_SEARCH_OTHER_ORGS",
+      "name": "Search User in other orgs",
+      "swimlane": "User not found in any org",
+      "type": "action",
+      "action_type": "search_other_orgs",
+      "tool_name": "cross_org_user_search",
+      "description": "Search auxiliary and secondary enterprise Salesforce orgs",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_USER_FOUND_OTHER",
+      "name": "Matching User Found in Other Orgs?",
+      "swimlane": "User not found in any org",
+      "type": "decision",
+      "condition_key": "user_found_in_other_orgs",
+      "description": "Evaluate if the user was found in any secondary or regional org",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_FETCH_SF_USER",
+      "name": "Fetch salesforce user (Is Active?)",
+      "swimlane": "User Deactivation",
+      "type": "action",
+      "action_type": "check_user_active",
+      "tool_name": "salesforce_get_basic_user",
+      "description": "Inspect the IsActive attribute on the resolved Salesforce user record",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_IS_ACTIVE",
+      "name": "Is Active?",
+      "swimlane": "User Deactivation",
+      "type": "decision",
+      "condition_key": "is_user_active",
+      "description": "Check if user IsActive is True or False in Salesforce",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_RETRIEVE_DEACT_AUDIT",
+      "name": "Retrieve Deactivation Audit",
+      "swimlane": "User Deactivation",
+      "type": "action",
+      "action_type": "get_deactivation_audit",
+      "tool_name": "salesforce_get_user_field",
+      "description": "Inspect SetupAuditTrail and retrieve latest user deactivation entries; retrieve Delegated Administrator members from DelegateGroupMember",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_DEACT_ACTOR_DA",
+      "name": "Deactivation actor matches DelegateGroupMember?",
+      "swimlane": "User Deactivation",
+      "type": "decision",
+      "condition_key": "is_deactivated_by_da",
+      "description": "Compare SetupAuditTrail.CreatedById with DelegateGroupMember.UserOrGroupId",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_FETCH_MIRROR_USER",
+      "name": "Fetch Similar User using mirror user identity",
+      "swimlane": "Federation ID Missing",
+      "type": "action",
+      "action_type": "fetch_mirror_user",
+      "tool_name": "salesforce_get_user_details",
+      "description": "Fetch peer mirror user to establish identity comparison baseline",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_COMPARE_EMP_FED_ID",
+      "name": "Compare EmpId and Federation Id of mirror user",
+      "swimlane": "Federation ID Missing",
+      "type": "action",
+      "action_type": "compare_emp_fed_id",
+      "tool_name": "salesforce_get_user_details",
+      "description": "Compare Employee ID, license type, and Federation ID against peer mirror user benchmark",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_IS_INTERNAL_USER",
+      "name": "Is same? (Internal)",
+      "swimlane": "Federation ID Missing",
+      "type": "decision",
+      "condition_key": "is_internal_user",
+      "description": "Determine if user identity is internal corporate employee vs external partner",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_FED_ID_BLANK",
+      "name": "Federation ID Blank?",
+      "swimlane": "Federation ID Missing",
+      "type": "decision",
+      "condition_key": "is_fed_id_blank",
+      "description": "Check if Salesforce FederationIdentifier is null, empty or unpopulated",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_OKTA_SUSPENDED",
+      "name": "Federation ID has Suspended value?",
+      "swimlane": "Federation ID Suspended",
+      "type": "decision",
+      "condition_key": "is_okta_suspended",
+      "description": "Check if Identity Provider / Okta user status is SUSPENDED or frozen",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_AZURE_WORKDAY_MATCH",
+      "name": "Federation ID matches Emp ID? (Workday)",
+      "swimlane": "Azure Synchronization Internal",
+      "type": "decision",
+      "condition_key": "azure_workday_matches",
+      "description": "Verify Salesforce FederationIdentifier matches Workday Employee ID in Azure AD",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_MOBILE_LOGIN_CHECK",
+      "name": "Has Description contain 'Mobile Login Issue' Symptom?",
+      "swimlane": "Mobile Login Setup issue",
+      "type": "decision",
+      "condition_key": "has_mobile_symptom",
+      "description": "Check if incident symptoms describe mobile app client configuration",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_CIAM_SYNC_MATCH",
+      "name": "Federation ID matches Emp ID? (CIAM)",
+      "swimlane": "CIAM Synchronization External",
+      "type": "decision",
+      "condition_key": "ciam_sync_matches",
+      "description": "Check if external user synthetic identity matches CIAM mapping",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_IS_EMAIL_VERIFIED",
+      "name": "Is Email Verified?",
+      "swimlane": "Email Not Verified",
+      "type": "decision",
+      "condition_key": "is_email_verified",
+      "description": "Check if Salesforce User EmailVerified attribute is True",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_WO_EMAIL_CHECK",
+      "name": "Has Description contain 'Work Order Email Not Received' Symptom?",
+      "swimlane": "Work Order Email issue",
+      "type": "decision",
+      "condition_key": "has_wo_symptom",
+      "description": "Check if incident symptoms report missing work order notification emails",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "TERMINAL_LOGIN_2",
+      "name": "Confirmed Wrong Salesforce URL",
+      "swimlane": "Wrong Login Url",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-2",
+      "decision_basis": "User account exists in Main Org, but attempted to access via an unapproved or incorrect URL. Provide official Main Org URL (https://bdx.my.salesforce.com) and verify resolution.",
+      "expected_criteria": "Login via approved company MyDomain URL",
+      "skill_file": "LOGIN-2-wrong-login-url.md",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "TERMINAL_LOGIN_1",
+      "name": "Confirmed User not found in any org",
+      "swimlane": "User not found in any org",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-1",
+      "decision_basis": "User account could not be located in primary org or any registered secondary org. Incident ticket is rerouted directly to HCL Service Desk for further handling (no RITM required from caller).",
+      "expected_criteria": "User account exists in Salesforce",
+      "skill_file": "LOGIN-1-user-account-not-available.md",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "TERMINAL_LOGIN_1B",
+      "name": "Confirmed User found in another org",
+      "swimlane": "User found in another org",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-1B",
+      "decision_basis": "User account was located in an alternate enterprise organization. Update work notes with identified org and approved login URL, and reroute to dedicated regional support team.",
+      "expected_criteria": "User account provisioned in Primary Org",
+      "skill_file": "LOGIN-1B-user-found-in-another-org.md",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "TERMINAL_LOGIN_3",
+      "name": "Confirmed User Deactivated by Delegated Administrator",
+      "swimlane": "User Deactivation",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-3A",
+      "decision_basis": "User exists in NA org AND IsActive = False. Deactivated user identified in SetupAuditTrail and SetupAuditTrail.CreatedById matches DelegateGroupMember.UserOrGroupId. Inform user to raise Manage User RITM for account reactivation.",
+      "expected_criteria": "User exists in NA org AND IsActive = False AND SetupAuditTrail.CreatedById matches DelegateGroupMember.UserOrGroupId",
+      "skill_file": "LOGIN-3A-delegated-admin-deactivation.md",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "TERMINAL_LOGIN_3_ESCALATE",
+      "name": "Automated deactivation from MuleSoft integration process",
+      "swimlane": "User Deactivation",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-3",
+      "decision_basis": "User exists in NA Org AND IsActive = False AND SetupAuditTrail.CreatedById = MuleSoft Integration User. Investigate deactivation reason with MuleSoft team, review payload/Kibana logs, engage Workday team if required, and update work notes with findings.",
+      "expected_criteria": "User exists in NA Org AND IsActive = False AND SetupAuditTrail.CreatedById = MuleSoft Integration User",
+      "skill_file": "LOGIN-3-user-account-deactivated.md",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "TERMINAL_LOGIN_4",
+      "name": "Confirmed Federation ID Missing",
+      "swimlane": "Federation ID Missing",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-4",
+      "decision_basis": "User exists in NA Org AND IsActive = True AND Internal User AND FederationIdentifier IS NULL or Blank. Update FederationIdentifier with EmployeeNumber.",
+      "expected_criteria": "User exists in NA Org AND IsActive = True AND Internal User AND FederationIdentifier IS NULL or Blank",
+      "skill_file": "LOGIN-4-federation-id-missing.md",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "TERMINAL_LOGIN_5",
+      "name": "Confirmed Federation ID Suspended",
+      "swimlane": "Federation ID Suspended",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-5",
+      "decision_basis": "User exists in NA Org AND IsActive = True AND Internal User AND FederationIdentifier contains suspended/frozen. Inform user to raise Manage User RITM for FederationIdentifier correction.",
+      "expected_criteria": "User exists in NA Org AND IsActive = True AND Internal User AND FederationIdentifier contains suspended/frozen",
+      "skill_file": "LOGIN-5-federation-id-suspended.md",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "TERMINAL_LOGIN_6",
+      "name": "Confirmed Azure Federation ID Synchronization Issue",
+      "swimlane": "Azure Synchronization Internal",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-6",
+      "decision_basis": "User exists in NA Org AND IsActive = True AND Internal User AND FederationIdentifier IS NOT NULL AND FederationIdentifier != EmployeeNumber. Engage Azure Team for validation and synchronization.",
+      "expected_criteria": "User exists in NA Org AND IsActive = True AND Internal User AND FederationIdentifier IS NOT NULL AND FederationIdentifier != EmployeeNumber",
+      "skill_file": "LOGIN-6-federation-id-not-synced-azure.md",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "TERMINAL_LOGIN_7",
+      "name": "Confirmed CIAM synthetic identity mapping issue",
+      "swimlane": "CIAM Synchronization External",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-7",
+      "decision_basis": "User exists in NA Org AND IsActive = True AND External User AND FederationIdentifier requires CIAM validation. Engage CIAM Team for validation and synchronization.",
+      "expected_criteria": "User exists in NA Org AND IsActive = True AND External User AND FederationIdentifier requires CIAM validation",
+      "skill_file": "LOGIN-7-external-user-federation-id-not-synced-ciam.md",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "TERMINAL_LOGIN_8",
+      "name": "Confirmed Mobile Login Setup Issue",
+      "swimlane": "Mobile Login Setup issue",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-8",
+      "decision_basis": "User account is active and operational; symptoms describe client-side mobile application configuration.",
+      "expected_criteria": "User.IsActive == True AND symptom indicates mobile login configuration",
+      "skill_file": "LOGIN-8-salesforce-mobile-app-login.md",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "TERMINAL_LOGIN_9",
+      "name": "Confirmed Work Order Email Issue",
+      "swimlane": "Work Order Email issue",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-9",
+      "decision_basis": "Missing email notifications upon work order closure due to email verification settings on Work Order.",
+      "expected_criteria": "Deliverability enabled for Work Order notifications",
+      "skill_file": "LOGIN-9-no-email-on-work-order-close.md",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "TERMINAL_LOGIN_10",
+      "name": "Confirmed Email not verified",
+      "swimlane": "Email Not Verified",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-10",
+      "decision_basis": "Salesforce User account email address is unverified, blocking portal and SSO login.",
+      "expected_criteria": "User.EmailVerified == True",
+      "skill_file": "LOGIN-10-email-not-verified.md",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "TERMINAL_OUT_OF_SCOPE",
+      "name": "Out Of Scope",
+      "swimlane": "Out Of Scope",
+      "type": "terminal",
+      "status": "escalation_required",
+      "issue_code": "OUT-OF-SCOPE",
+      "decision_basis": "User verified active with valid credentials, verified email, and valid Federation ID. No canonical login issue matched flowchart criteria. Routing to Tier-2 engineering.",
+      "expected_criteria": "Standard canonical diagnostic pattern",
+      "skill_file": null,
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_CHECK_USER_UNAPPROVED_URL",
+      "name": "Check User Existence for Unapproved URL",
+      "swimlane": "Wrong Login Url",
+      "type": "action",
+      "action_type": "check_user_unapproved_url",
+      "tool_name": "salesforce_user_search",
+      "description": "Verify if the user account exists in the Main Salesforce Organization despite using an unapproved URL",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_USER_EXISTS_UNAPPROVED_URL",
+      "name": "User Exists in Main Org? (Unapproved URL)",
+      "swimlane": "Wrong Login Url",
+      "type": "decision",
+      "condition_key": "user_exists_in_main_org",
+      "description": "Determine if user account exists in Main Org (NA) when an unapproved URL was used",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_IS_MAIN_ORG_URL",
+      "name": "Provided URL Belongs to Main Org?",
+      "swimlane": "Wrong Login Url",
+      "type": "decision",
+      "condition_key": "is_main_org_url",
+      "description": "Determine whether the approved URL belongs to the Main Organization (NA: bdx) or a secondary cross-org",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_SEARCH_PROVIDED_CROSS_ORG",
+      "name": "Search User in Provided Secondary Org",
+      "swimlane": "User found in another org",
+      "type": "action",
+      "action_type": "search_user_provided_org",
+      "tool_name": "cross_org_user_search",
+      "description": "Search the specific secondary organization (EMEA/ACE/SMAX) corresponding to the provided approved URL",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_USER_FOUND_IN_PROVIDED_ORG",
+      "name": "User Exists in Provided Secondary Org?",
+      "swimlane": "User found in another org",
+      "type": "decision",
+      "condition_key": "user_found_in_provided_org",
+      "description": "Evaluate if the user account exists in the specific organization associated with the provided URL",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_SEARCH_MAIN_FROM_CROSS",
+      "name": "Search Main Org for Misdirected User",
+      "swimlane": "User found in another org",
+      "type": "action",
+      "action_type": "search_main_from_cross",
+      "tool_name": "salesforce_user_search",
+      "description": "Search Main Org (NA) to verify if a user who entered a cross-org URL actually belongs to the Main Org",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_USER_FOUND_MAIN_FROM_CROSS",
+      "name": "User Exists in Main Org? (Cross-Org Link)",
+      "swimlane": "User found in another org",
+      "type": "decision",
+      "condition_key": "user_found_main_from_cross",
+      "description": "Evaluate if user who entered a cross-org URL actually holds an account in the Main Organization (NA)",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "TERMINAL_LOGIN_REGIONAL_SCOPE",
+      "name": "Confirmed Regional Org Scope (Reroute)",
+      "swimlane": "User found in another org",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-1B",
+      "decision_basis": "User account exists in the regional organization matching the provided URL. Ticket falls under dedicated regional team scope; rerouted to regional support team.",
+      "expected_criteria": "User account in regional organization",
+      "skill_file": "LOGIN-1B-user-found-in-another-org.md",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "TERMINAL_LOGIN_2C",
+      "name": "Confirmed Main Org User Used Cross-Org URL",
+      "swimlane": "Wrong Login Url",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "LOGIN-2",
+      "decision_basis": "User account exists in Main Org (NA), but user attempted to log in using a cross-org endpoint. Provide official Main Org URL (https://bdx.my.salesforce.com).",
+      "expected_criteria": "User accesses Main Org URL (bdx.my.salesforce.com)",
+      "skill_file": "LOGIN-2-wrong-login-url.md",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_APP_TRIAGE_RESULT",
+      "name": "Prompt Result (APPLICATION Domain): Affected User, Domain: Application, Mirror User, Login URL",
+      "swimlane": "Login Issue",
+      "type": "action",
+      "action_type": "ingest_triage",
+      "tool_name": "TriageNarrativeParser",
+      "description": "Initial entry point for APPLICATION domain decision tree: Ingests Prompt Result containing Affected User, Domain: Application, Mirror User, and Login URL",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_FOLLOW_LOGIN_IS_ACTIVE",
+      "name": "Follow Login flowchart to find IsActive",
+      "swimlane": "Login Issue",
+      "type": "action",
+      "action_type": "check_user_active",
+      "tool_name": "salesforce_get_basic_user",
+      "description": "Inspect user record in Salesforce to verify account active status (User.IsActive)",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_IS_ACTIVE",
+      "name": "Is Active ?",
+      "swimlane": "Login Issue",
+      "type": "decision",
+      "condition_key": "is_user_active",
+      "description": "Evaluate if the affected user account is active in Salesforce",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "TERMINAL_APP_LOGIN_ISSUE",
+      "name": "Login Issue",
+      "swimlane": "Login Issue",
+      "type": "terminal",
+      "status": "rerouted_to_login",
+      "issue_code": "LOGIN-ISSUE-INACTIVE",
+      "decision_basis": "User account is deactivated (IsActive=False). Issue is governed by the Login domain deactivation workflow.",
+      "expected_criteria": "User.IsActive == True",
+      "skill_file": "LOGIN-3-user-account-deactivated.md",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_RETRIEVE_PERM_SETS",
+      "name": "Retrieve Assigned Permission sets and details",
+      "swimlane": "Permission Set Missing",
+      "type": "action",
+      "action_type": "retrieve_permission_sets",
+      "tool_name": "salesforce_get_user_permission_sets",
+      "description": "Retrieve all assigned Permission Sets, package licenses, and user permissions from Salesforce",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_CLASSIFY_ISSUE_TYPE",
+      "name": "Classify the IssueType",
+      "swimlane": "Permission Set Missing",
+      "type": "action",
+      "action_type": "classify_application",
+      "tool_name": "ApplicationIssueClassifier",
+      "description": "Classify target application based on ticket description (CC360, Pharma/Community, Conga/CLM/Apttus)",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_IS_CC360_ISSUE",
+      "name": "CC360 Issue?",
+      "swimlane": "Permission Set Missing",
+      "type": "decision",
+      "condition_key": "is_cc360_issue",
+      "description": "Check whether the incident concerns Customer 360 (CC360 / Cloud Customer 360)",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_IS_PHARM_ISSUE",
+      "name": "Pharm App Issue?",
+      "swimlane": "Permission Set Missing",
+      "type": "decision",
+      "condition_key": "is_pharm_issue",
+      "description": "Check whether the incident concerns Pharma System or Community application",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_IS_CONGA_ISSUE",
+      "name": "Conga App Issue?",
+      "swimlane": "Permission Set Missing",
+      "type": "decision",
+      "condition_key": "is_conga_issue",
+      "description": "Check whether the incident concerns Conga / CLM / Apttus application suite",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_IS_CC360_PS_ASSIGNED",
+      "name": "Is CC360 Permission Set Assigned?",
+      "swimlane": "CC360 Permission Set Missing",
+      "type": "decision",
+      "condition_key": "is_cc360_ps_assigned",
+      "description": "Verify if CC360 Permission Set (e.g. Cloud Customer 360 / CC360_User) is assigned to the user",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "TERMINAL_APP_CC360_PS_MISSING",
+      "name": "Confirmed: CC360 Permission Set Missing",
+      "swimlane": "CC360 Permission Set Missing",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "APP-CC360-PS-MISSING",
+      "decision_basis": "User is active, issue is classified as CC360, but user lacks CC360 Permission Set in Salesforce.",
+      "expected_criteria": "CC360 Permission Set assigned to user",
+      "skill_file": "APP-CC360-permission-set-missing.md",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_IS_COMMUNITY_PS_ASSIGNED",
+      "name": "Is Only PS Community User Permission Set Assigned?",
+      "swimlane": "Only PS Community Permission Set Missing",
+      "type": "decision",
+      "condition_key": "is_community_ps_assigned",
+      "description": "Verify if 'Only PS Community User' (or Pharma Community User) permission set is assigned to user",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "TERMINAL_APP_COMMUNITY_PS_MISSING",
+      "name": "Confirmed: Only PS Community User Permission Set Missing",
+      "swimlane": "Only PS Community Permission Set Missing",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "APP-COMMUNITY-PS-MISSING",
+      "decision_basis": "User is active and attempting to access Pharma/Community app, but 'Only PS Community User' permission set is missing from user record.",
+      "expected_criteria": "Only PS Community User Permission Set assigned",
+      "skill_file": "APP-COMMUNITY-permission-set-missing.md",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_ANALYSE_INCIDENT_DESC",
+      "name": "Classify the IssueType / Analyse the Incident Description",
+      "swimlane": "Permission Set Missing",
+      "type": "action",
+      "action_type": "analyze_incident_description",
+      "tool_name": "CongaSymptomAnalyzer",
+      "description": "Analyze incident narrative for specific Conga sub-symptoms (CLM Onboarding, CRM Content, X-Author, BU, Apttus access)",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_HAS_CLM_ONBOARDING_SYMPTOM",
+      "name": "Has Description contains \"CLM New User Onboarding Issue\" Symptom?",
+      "swimlane": "CLM Package License Missing",
+      "type": "decision",
+      "condition_key": "has_clm_onboarding_symptom",
+      "description": "Check if incident narrative contains CLM new user onboarding or setup symptoms",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_IS_CLM_PACKAGE_ASSIGNED",
+      "name": "Is CLM Package Assigned?",
+      "swimlane": "CLM Package License Missing",
+      "type": "decision",
+      "condition_key": "is_clm_package_assigned",
+      "description": "Inspect UserPackageLicense to verify if Conga CLM / Apttus package license is assigned",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "TERMINAL_APP_CLM_LICENSE_MISSING",
+      "name": "Confirmed: CLM Package License Missing",
+      "swimlane": "CLM Package License Missing",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "APP-CLM-LICENSE-MISSING",
+      "decision_basis": "User experiencing CLM New User Onboarding issue, and Conga CLM Package License (UserPackageLicense) is missing in Salesforce.",
+      "expected_criteria": "Conga CLM Package License assigned",
+      "skill_file": "APP-CLM-package-license-missing.md",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_HAS_CRM_CONTENT_SYMPTOM",
+      "name": "Has Description contained \"CRM Content / Content Library Issue\" Symptom?",
+      "swimlane": "CRM Content User Not Enabled",
+      "type": "decision",
+      "condition_key": "has_crm_content_symptom",
+      "description": "Check if ticket description mentions CRM Content / Content Library access errors",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_IS_CRM_CONTENT_USER_ENABLED",
+      "name": "Is UserPermissionsContentUser Enabled?",
+      "swimlane": "CRM Content User Not Enabled",
+      "type": "decision",
+      "condition_key": "is_crm_content_user_enabled",
+      "description": "Check whether User.UserPermissionsSFContentUser is True in Salesforce",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "TERMINAL_APP_CRM_CONTENT_DISABLED",
+      "name": "Confirmed: CRM Content User Not Enabled",
+      "swimlane": "CRM Content User Not Enabled",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "APP-CRM-CONTENT-DISABLED",
+      "decision_basis": "User requires CRM Content / Content Library access, but UserPermissionsSFContentUser is False on their Salesforce user record.",
+      "expected_criteria": "User.UserPermissionsSFContentUser == True",
+      "skill_file": "APP-CRM-content-user-disabled.md",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_HAS_XAUTHOR_SYMPTOM",
+      "name": "Has Description contained \"X-Author related issue\" Symptom?",
+      "swimlane": "X-Author Permission Missing",
+      "type": "decision",
+      "condition_key": "has_xauthor_symptom",
+      "description": "Check if description mentions Conga X-Author, X-Author for Excel, or contract template add-in",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_IS_XAUTHOR_PS_ASSIGNED",
+      "name": "Is Agreement - Apttus X-Author Permission Set Assigned?",
+      "swimlane": "X-Author Permission Missing",
+      "type": "decision",
+      "condition_key": "is_xauthor_ps_assigned",
+      "description": "Verify whether Apttus / Conga X-Author Permission Set is assigned to the user",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "TERMINAL_APP_XAUTHOR_PS_MISSING",
+      "name": "Confirmed: X-Author Permission Missing",
+      "swimlane": "X-Author Permission Missing",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "APP-XAUTHOR-PS-MISSING",
+      "decision_basis": "User experiencing X-Author issue, and Apttus X-Author Permission Set is missing from user record in Salesforce.",
+      "expected_criteria": "Agreement - Apttus X-Author Permission Set assigned",
+      "skill_file": "APP-XAUTHOR-permission-set-missing.md",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_DETERMINE_BU_ACCESS",
+      "name": "Determine BU and Access Level from Description",
+      "swimlane": "Business Unit Missing",
+      "type": "decision",
+      "condition_key": "can_determine_bu_access",
+      "description": "Determine whether Business Unit (BU) and Access Level are present and valid in user profile or ticket narrative",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "TERMINAL_APP_BU_MISSING",
+      "name": "Confirmed: BU Missing",
+      "swimlane": "Business Unit Missing",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "APP-BU-MISSING",
+      "decision_basis": "User's Business Unit (BU) or Access Level cannot be determined or is missing in Salesforce configuration.",
+      "expected_criteria": "Valid Business Unit and Access Level configured",
+      "skill_file": "APP-BU-missing.md",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_HAS_APTTUS_SYMPTOM",
+      "name": "Has Description contained \"Permission or Access issue\" Symptom?",
+      "swimlane": "Apttus Permission Missing",
+      "type": "decision",
+      "condition_key": "has_apttus_access_symptom",
+      "description": "Check if description mentions general Apttus/Conga agreement permission or access errors",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_IS_APTTUS_PS_ASSIGNED",
+      "name": "Is Agreement - Apttus Permission Set Assigned?",
+      "swimlane": "Apttus Permission Missing",
+      "type": "decision",
+      "condition_key": "is_apttus_ps_assigned",
+      "description": "Verify whether Agreement - Apttus / Conga Permission Set is assigned to user",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "TERMINAL_APP_APTTUS_PS_MISSING",
+      "name": "Confirmed: Apttus Permission Missing",
+      "swimlane": "Apttus Permission Missing",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "APP-APTTUS-PS-MISSING",
+      "decision_basis": "User experiencing Apttus agreement permission or access issue, and Agreement Apttus Permission Set is missing from Salesforce.",
+      "expected_criteria": "Agreement - Apttus Permission Set assigned",
+      "skill_file": "APP-APTTUS-permission-set-missing.md",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "TERMINAL_APP_OUT_OF_SCOPE_L3_GROUP",
+      "name": "L3 Group Resolver",
+      "swimlane": "Out Of scope",
+      "type": "terminal",
+      "status": "out_of_scope",
+      "issue_code": "OUT-OF-SCOPE-L3-GROUP",
+      "decision_basis": "All checked permissions and package licenses are already assigned in Salesforce. Escalated to L3 Group Resolver for specialized analysis.",
+      "expected_criteria": "Application permissions present",
+      "skill_file": "OUT-OF-SCOPE-resolver.md",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "TERMINAL_APP_OUT_OF_SCOPE_L3_QUEUE",
+      "name": "L3 Queue Resolver",
+      "swimlane": "Out Of scope",
+      "type": "terminal",
+      "status": "out_of_scope",
+      "issue_code": "OUT-OF-SCOPE-L3-QUEUE",
+      "decision_basis": "Reported application issue is not CC360, Pharma, or recognized Conga symptoms. Ticket routed to L3 Queue Resolver.",
+      "expected_criteria": "Recognized application scope",
+      "skill_file": "OUT-OF-SCOPE-resolver.md",
+      "domain": "APPLICATION"
+    }
+  ],
+  "edges": [
+    {
+      "from": "NODE_TRIAGE_AGENT",
+      "to": "NODE_TRIAGE_RESULT",
+      "type": "ON_DOMAIN_LOGIN",
+      "domain": "LOGIN",
+      "description": "Route ticket classified as LOGIN domain to Login decision tree"
+    },
+    {
+      "from": "NODE_TRIAGE_AGENT",
+      "to": "NODE_APP_TRIAGE_RESULT",
+      "type": "ON_DOMAIN_APPLICATION",
+      "domain": "APPLICATION",
+      "description": "Route ticket classified as APPLICATION domain to Application decision tree"
+    },
+    {
+      "from": "NODE_TRIAGE_RESULT",
+      "to": "NODE_LOGIN_URL_PROVIDED",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_LOGIN_URL_PROVIDED",
+      "to": "NODE_VALIDATE_LOGIN_URL",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_LOGIN_URL_PROVIDED",
+      "to": "NODE_SEARCH_MAIN_ORG",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_VALIDATE_LOGIN_URL",
+      "to": "NODE_APPROVED_URL",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_SEARCH_MAIN_ORG",
+      "to": "NODE_USER_FOUND_MAIN",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_USER_FOUND_MAIN",
+      "to": "NODE_FETCH_SF_USER",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_USER_FOUND_MAIN",
+      "to": "NODE_SEARCH_OTHER_ORGS",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_SEARCH_OTHER_ORGS",
+      "to": "NODE_USER_FOUND_OTHER",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_USER_FOUND_OTHER",
+      "to": "TERMINAL_LOGIN_1B",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_USER_FOUND_OTHER",
+      "to": "TERMINAL_LOGIN_1",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_FETCH_SF_USER",
+      "to": "NODE_IS_ACTIVE",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_IS_ACTIVE",
+      "to": "NODE_FETCH_MIRROR_USER",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_IS_ACTIVE",
+      "to": "NODE_RETRIEVE_DEACT_AUDIT",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_RETRIEVE_DEACT_AUDIT",
+      "to": "NODE_DEACT_ACTOR_DA",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_DEACT_ACTOR_DA",
+      "to": "TERMINAL_LOGIN_3",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_DEACT_ACTOR_DA",
+      "to": "TERMINAL_LOGIN_3_ESCALATE",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_FETCH_MIRROR_USER",
+      "to": "NODE_COMPARE_EMP_FED_ID",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_COMPARE_EMP_FED_ID",
+      "to": "NODE_IS_INTERNAL_USER",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_IS_INTERNAL_USER",
+      "to": "NODE_FED_ID_BLANK",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_IS_INTERNAL_USER",
+      "to": "NODE_CIAM_SYNC_MATCH",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_FED_ID_BLANK",
+      "to": "TERMINAL_LOGIN_4",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_FED_ID_BLANK",
+      "to": "NODE_OKTA_SUSPENDED",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_OKTA_SUSPENDED",
+      "to": "TERMINAL_LOGIN_5",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_OKTA_SUSPENDED",
+      "to": "NODE_AZURE_WORKDAY_MATCH",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_AZURE_WORKDAY_MATCH",
+      "to": "NODE_MOBILE_LOGIN_CHECK",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_AZURE_WORKDAY_MATCH",
+      "to": "TERMINAL_LOGIN_6",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_MOBILE_LOGIN_CHECK",
+      "to": "TERMINAL_LOGIN_8",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_MOBILE_LOGIN_CHECK",
+      "to": "TERMINAL_OUT_OF_SCOPE",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_CIAM_SYNC_MATCH",
+      "to": "NODE_IS_EMAIL_VERIFIED",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_CIAM_SYNC_MATCH",
+      "to": "TERMINAL_LOGIN_7",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_IS_EMAIL_VERIFIED",
+      "to": "TERMINAL_OUT_OF_SCOPE",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_IS_EMAIL_VERIFIED",
+      "to": "NODE_WO_EMAIL_CHECK",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_WO_EMAIL_CHECK",
+      "to": "TERMINAL_LOGIN_9",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_WO_EMAIL_CHECK",
+      "to": "TERMINAL_LOGIN_10",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APPROVED_URL",
+      "to": "NODE_CHECK_USER_UNAPPROVED_URL",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_CHECK_USER_UNAPPROVED_URL",
+      "to": "NODE_USER_EXISTS_UNAPPROVED_URL",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_USER_EXISTS_UNAPPROVED_URL",
+      "to": "TERMINAL_LOGIN_2",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_USER_EXISTS_UNAPPROVED_URL",
+      "to": "TERMINAL_LOGIN_1",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APPROVED_URL",
+      "to": "NODE_IS_MAIN_ORG_URL",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_IS_MAIN_ORG_URL",
+      "to": "NODE_SEARCH_MAIN_ORG",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_IS_MAIN_ORG_URL",
+      "to": "NODE_SEARCH_PROVIDED_CROSS_ORG",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_SEARCH_PROVIDED_CROSS_ORG",
+      "to": "NODE_USER_FOUND_IN_PROVIDED_ORG",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_USER_FOUND_IN_PROVIDED_ORG",
+      "to": "TERMINAL_LOGIN_REGIONAL_SCOPE",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_USER_FOUND_IN_PROVIDED_ORG",
+      "to": "NODE_SEARCH_MAIN_FROM_CROSS",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_SEARCH_MAIN_FROM_CROSS",
+      "to": "NODE_USER_FOUND_MAIN_FROM_CROSS",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_USER_FOUND_MAIN_FROM_CROSS",
+      "to": "TERMINAL_LOGIN_2C",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_USER_FOUND_MAIN_FROM_CROSS",
+      "to": "NODE_SEARCH_OTHER_ORGS",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_TRIAGE_RESULT",
+      "to": "NODE_APP_FOLLOW_LOGIN_IS_ACTIVE",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_APP_FOLLOW_LOGIN_IS_ACTIVE",
+      "to": "NODE_APP_IS_ACTIVE",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_APP_IS_ACTIVE",
+      "to": "NODE_APP_RETRIEVE_PERM_SETS",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_IS_ACTIVE",
+      "to": "TERMINAL_APP_LOGIN_ISSUE",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_RETRIEVE_PERM_SETS",
+      "to": "NODE_APP_CLASSIFY_ISSUE_TYPE",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_APP_CLASSIFY_ISSUE_TYPE",
+      "to": "NODE_APP_IS_CC360_ISSUE",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_APP_IS_CC360_ISSUE",
+      "to": "NODE_APP_IS_CC360_PS_ASSIGNED",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_IS_CC360_ISSUE",
+      "to": "NODE_APP_IS_PHARM_ISSUE",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_PHARM_ISSUE",
+      "to": "NODE_APP_IS_COMMUNITY_PS_ASSIGNED",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_IS_PHARM_ISSUE",
+      "to": "NODE_APP_IS_CONGA_ISSUE",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_CONGA_ISSUE",
+      "to": "NODE_APP_ANALYSE_INCIDENT_DESC",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_IS_CONGA_ISSUE",
+      "to": "TERMINAL_APP_OUT_OF_SCOPE_L3_QUEUE",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_CC360_PS_ASSIGNED",
+      "to": "TERMINAL_APP_CC360_PS_MISSING",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_CC360_PS_ASSIGNED",
+      "to": "TERMINAL_APP_OUT_OF_SCOPE_L3_GROUP",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_IS_COMMUNITY_PS_ASSIGNED",
+      "to": "TERMINAL_APP_COMMUNITY_PS_MISSING",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_COMMUNITY_PS_ASSIGNED",
+      "to": "TERMINAL_APP_OUT_OF_SCOPE_L3_GROUP",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_ANALYSE_INCIDENT_DESC",
+      "to": "NODE_APP_HAS_CLM_ONBOARDING_SYMPTOM",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_APP_HAS_CLM_ONBOARDING_SYMPTOM",
+      "to": "NODE_APP_IS_CLM_PACKAGE_ASSIGNED",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_HAS_CLM_ONBOARDING_SYMPTOM",
+      "to": "NODE_APP_HAS_CRM_CONTENT_SYMPTOM",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_CLM_PACKAGE_ASSIGNED",
+      "to": "TERMINAL_APP_CLM_LICENSE_MISSING",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_CLM_PACKAGE_ASSIGNED",
+      "to": "TERMINAL_APP_OUT_OF_SCOPE_L3_GROUP",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_HAS_CRM_CONTENT_SYMPTOM",
+      "to": "NODE_APP_IS_CRM_CONTENT_USER_ENABLED",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_HAS_CRM_CONTENT_SYMPTOM",
+      "to": "NODE_APP_HAS_XAUTHOR_SYMPTOM",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_CRM_CONTENT_USER_ENABLED",
+      "to": "TERMINAL_APP_CRM_CONTENT_DISABLED",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_CRM_CONTENT_USER_ENABLED",
+      "to": "TERMINAL_APP_OUT_OF_SCOPE_L3_GROUP",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_HAS_XAUTHOR_SYMPTOM",
+      "to": "NODE_APP_IS_XAUTHOR_PS_ASSIGNED",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_HAS_XAUTHOR_SYMPTOM",
+      "to": "NODE_APP_DETERMINE_BU_ACCESS",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_XAUTHOR_PS_ASSIGNED",
+      "to": "TERMINAL_APP_XAUTHOR_PS_MISSING",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_XAUTHOR_PS_ASSIGNED",
+      "to": "NODE_APP_DETERMINE_BU_ACCESS",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_DETERMINE_BU_ACCESS",
+      "to": "TERMINAL_APP_BU_MISSING",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_DETERMINE_BU_ACCESS",
+      "to": "NODE_APP_HAS_APTTUS_SYMPTOM",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_HAS_APTTUS_SYMPTOM",
+      "to": "NODE_APP_IS_APTTUS_PS_ASSIGNED",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_HAS_APTTUS_SYMPTOM",
+      "to": "TERMINAL_APP_OUT_OF_SCOPE_L3_QUEUE",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_APTTUS_PS_ASSIGNED",
+      "to": "TERMINAL_APP_APTTUS_PS_MISSING",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_APTTUS_PS_ASSIGNED",
+      "to": "TERMINAL_APP_OUT_OF_SCOPE_L3_GROUP",
+      "type": "ON_YES"
+    }
+  ],
+  "approved_orgs": [
+    {
+      "org_id": "ORG_NA",
+      "name": "NA",
+      "full_name": "North America (Main)",
+      "login_url": "https://bdx.my.salesforce.com",
+      "domain_name": "bdx.my.salesforce.com",
+      "is_main": true,
+      "description": "Primary enterprise production organization for North America"
+    },
+    {
+      "org_id": "ORG_DEV_POC",
+      "name": "Main Dev Org (PoC)",
+      "full_name": "Connected Developer Org (Main PoC)",
+      "login_url": "https://orgfarm-9053409114-dev-ed.develop.my.salesforce.com",
+      "domain_name": "orgfarm-9053409114-dev-ed.develop.my.salesforce.com",
+      "aliases": [
+        "orgfarm-9053409114-dev-ed.develop.lightning.force.com"
+      ],
+      "is_main": true,
+      "description": "Active connected Salesforce Developer Org configured in .env for PoC testing"
+    },
+    {
+      "org_id": "ORG_EMEA",
+      "name": "EMEA",
+      "full_name": "Europe, Middle East & Africa",
+      "login_url": "https://bd2my.salesforce.com",
+      "domain_name": "bd2my.salesforce.com",
+      "aliases": [
+        "bd2.my.salesforce.com"
+      ],
+      "is_main": false,
+      "description": "Enterprise organization for EMEA region"
+    },
+    {
+      "org_id": "ORG_ACE_GA",
+      "name": "ACE/GA",
+      "full_name": "Asia Central East / Greater Asia",
+      "login_url": "https://bdxga.my.salesforce.com",
+      "domain_name": "bdxga.my.salesforce.com",
+      "aliases": [],
+      "is_main": false,
+      "description": "Enterprise organization for ACE / Greater Asia region"
+    },
+    {
+      "org_id": "ORG_SMAX",
+      "name": "SMAX",
+      "full_name": "ServiceMax Operations",
+      "login_url": "https://bdsmx.my.salesforce.com",
+      "domain_name": "bdsmx.my.salesforce.com",
+      "aliases": [],
+      "is_main": false,
+      "description": "Enterprise organization for ServiceMax operations"
+    }
+  ]
+}

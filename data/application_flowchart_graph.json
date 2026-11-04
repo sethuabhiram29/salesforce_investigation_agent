@@ -1,0 +1,461 @@
+{
+  "domain": "APPLICATION",
+  "name": "Application Issues Decision Tree Knowledge Graph",
+  "version": "1.0",
+  "start_node_id": "NODE_APP_TRIAGE_RESULT",
+  "nodes": [
+    {
+      "id": "NODE_APP_TRIAGE_RESULT",
+      "name": "Prompt Result (APPLICATION Domain): Affected User, Domain: Application, Mirror User, Login URL",
+      "swimlane": "Login Issue",
+      "type": "action",
+      "action_type": "ingest_triage",
+      "tool_name": "TriageNarrativeParser",
+      "description": "Initial entry point for APPLICATION domain decision tree: Ingests Prompt Result containing Affected User, Domain: Application, Mirror User, and Login URL",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_APP_FOLLOW_LOGIN_IS_ACTIVE",
+      "name": "Follow Login flowchart to find IsActive",
+      "swimlane": "Login Issue",
+      "type": "action",
+      "action_type": "check_user_active",
+      "tool_name": "salesforce_get_basic_user",
+      "description": "Inspect user record in Salesforce to verify account active status (User.IsActive)"
+    },
+    {
+      "id": "NODE_APP_IS_ACTIVE",
+      "name": "Is Active ?",
+      "swimlane": "Login Issue",
+      "type": "decision",
+      "condition_key": "is_user_active",
+      "description": "Evaluate if the affected user account is active in Salesforce"
+    },
+    {
+      "id": "TERMINAL_APP_LOGIN_ISSUE",
+      "name": "Login Issue",
+      "swimlane": "Login Issue",
+      "type": "terminal",
+      "status": "rerouted_to_login",
+      "issue_code": "LOGIN-ISSUE-INACTIVE",
+      "decision_basis": "User account is deactivated (IsActive=False). Issue is governed by the Login domain deactivation workflow.",
+      "expected_criteria": "User.IsActive == True",
+      "skill_file": "LOGIN-3-user-account-deactivated.md"
+    },
+    {
+      "id": "NODE_APP_RETRIEVE_PERM_SETS",
+      "name": "Retrieve Assigned Permission sets and details",
+      "swimlane": "Permission Set Missing",
+      "type": "action",
+      "action_type": "retrieve_permission_sets",
+      "tool_name": "salesforce_get_user_permission_sets",
+      "description": "Retrieve all assigned Permission Sets, package licenses, and user permissions from Salesforce"
+    },
+    {
+      "id": "NODE_APP_CLASSIFY_ISSUE_TYPE",
+      "name": "Classify the IssueType",
+      "swimlane": "Permission Set Missing",
+      "type": "action",
+      "action_type": "classify_application",
+      "tool_name": "ApplicationIssueClassifier",
+      "description": "Classify target application based on ticket description (CC360, Pharma/Community, Conga/CLM/Apttus)"
+    },
+    {
+      "id": "NODE_APP_IS_CC360_ISSUE",
+      "name": "CC360 Issue?",
+      "swimlane": "Permission Set Missing",
+      "type": "decision",
+      "condition_key": "is_cc360_issue",
+      "description": "Check whether the incident concerns Customer 360 (CC360 / Cloud Customer 360)"
+    },
+    {
+      "id": "NODE_APP_IS_PHARM_ISSUE",
+      "name": "Pharm App Issue?",
+      "swimlane": "Permission Set Missing",
+      "type": "decision",
+      "condition_key": "is_pharm_issue",
+      "description": "Check whether the incident concerns Pharma System or Community application"
+    },
+    {
+      "id": "NODE_APP_IS_CONGA_ISSUE",
+      "name": "Conga App Issue?",
+      "swimlane": "Permission Set Missing",
+      "type": "decision",
+      "condition_key": "is_conga_issue",
+      "description": "Check whether the incident concerns Conga / CLM / Apttus application suite"
+    },
+    {
+      "id": "NODE_APP_IS_CC360_PS_ASSIGNED",
+      "name": "Is CC360 Permission Set Assigned?",
+      "swimlane": "CC360 Permission Set Missing",
+      "type": "decision",
+      "condition_key": "is_cc360_ps_assigned",
+      "description": "Verify if CC360 Permission Set (e.g. Cloud Customer 360 / CC360_User) is assigned to the user"
+    },
+    {
+      "id": "TERMINAL_APP_CC360_PS_MISSING",
+      "name": "Confirmed: CC360 Permission Set Missing",
+      "swimlane": "CC360 Permission Set Missing",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "APP-CC360-PS-MISSING",
+      "decision_basis": "User is active, issue is classified as CC360, but user lacks CC360 Permission Set in Salesforce.",
+      "expected_criteria": "CC360 Permission Set assigned to user",
+      "skill_file": "APP-CC360-permission-set-missing.md"
+    },
+    {
+      "id": "NODE_APP_IS_COMMUNITY_PS_ASSIGNED",
+      "name": "Is Only PS Community User Permission Set Assigned?",
+      "swimlane": "Only PS Community Permission Set Missing",
+      "type": "decision",
+      "condition_key": "is_community_ps_assigned",
+      "description": "Verify if 'Only PS Community User' (or Pharma Community User) permission set is assigned to user"
+    },
+    {
+      "id": "TERMINAL_APP_COMMUNITY_PS_MISSING",
+      "name": "Confirmed: Only PS Community User Permission Set Missing",
+      "swimlane": "Only PS Community Permission Set Missing",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "APP-COMMUNITY-PS-MISSING",
+      "decision_basis": "User is active and attempting to access Pharma/Community app, but 'Only PS Community User' permission set is missing from user record.",
+      "expected_criteria": "Only PS Community User Permission Set assigned",
+      "skill_file": "APP-COMMUNITY-permission-set-missing.md"
+    },
+    {
+      "id": "NODE_APP_ANALYSE_INCIDENT_DESC",
+      "name": "Classify the IssueType / Analyse the Incident Description",
+      "swimlane": "Permission Set Missing",
+      "type": "action",
+      "action_type": "analyze_incident_description",
+      "tool_name": "CongaSymptomAnalyzer",
+      "description": "Analyze incident narrative for specific Conga sub-symptoms (CLM Onboarding, CRM Content, X-Author, BU, Apttus access)"
+    },
+    {
+      "id": "NODE_APP_HAS_CLM_ONBOARDING_SYMPTOM",
+      "name": "Has Description contains \"CLM New User Onboarding Issue\" Symptom?",
+      "swimlane": "CLM Package License Missing",
+      "type": "decision",
+      "condition_key": "has_clm_onboarding_symptom",
+      "description": "Check if incident narrative contains CLM new user onboarding or setup symptoms"
+    },
+    {
+      "id": "NODE_APP_IS_CLM_PACKAGE_ASSIGNED",
+      "name": "Is CLM Package Assigned?",
+      "swimlane": "CLM Package License Missing",
+      "type": "decision",
+      "condition_key": "is_clm_package_assigned",
+      "description": "Inspect UserPackageLicense to verify if Conga CLM / Apttus package license is assigned"
+    },
+    {
+      "id": "TERMINAL_APP_CLM_LICENSE_MISSING",
+      "name": "Confirmed: CLM Package License Missing",
+      "swimlane": "CLM Package License Missing",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "APP-CLM-LICENSE-MISSING",
+      "decision_basis": "User experiencing CLM New User Onboarding issue, and Conga CLM Package License (UserPackageLicense) is missing in Salesforce.",
+      "expected_criteria": "Conga CLM Package License assigned",
+      "skill_file": "APP-CLM-package-license-missing.md"
+    },
+    {
+      "id": "NODE_APP_HAS_CRM_CONTENT_SYMPTOM",
+      "name": "Has Description contained \"CRM Content / Content Library Issue\" Symptom?",
+      "swimlane": "CRM Content User Not Enabled",
+      "type": "decision",
+      "condition_key": "has_crm_content_symptom",
+      "description": "Check if ticket description mentions CRM Content / Content Library access errors"
+    },
+    {
+      "id": "NODE_APP_IS_CRM_CONTENT_USER_ENABLED",
+      "name": "Is UserPermissionsContentUser Enabled?",
+      "swimlane": "CRM Content User Not Enabled",
+      "type": "decision",
+      "condition_key": "is_crm_content_user_enabled",
+      "description": "Check whether User.UserPermissionsSFContentUser is True in Salesforce"
+    },
+    {
+      "id": "TERMINAL_APP_CRM_CONTENT_DISABLED",
+      "name": "Confirmed: CRM Content User Not Enabled",
+      "swimlane": "CRM Content User Not Enabled",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "APP-CRM-CONTENT-DISABLED",
+      "decision_basis": "User requires CRM Content / Content Library access, but UserPermissionsSFContentUser is False on their Salesforce user record.",
+      "expected_criteria": "User.UserPermissionsSFContentUser == True",
+      "skill_file": "APP-CRM-content-user-disabled.md"
+    },
+    {
+      "id": "NODE_APP_HAS_XAUTHOR_SYMPTOM",
+      "name": "Has Description contained \"X-Author related issue\" Symptom?",
+      "swimlane": "X-Author Permission Missing",
+      "type": "decision",
+      "condition_key": "has_xauthor_symptom",
+      "description": "Check if description mentions Conga X-Author, X-Author for Excel, or contract template add-in"
+    },
+    {
+      "id": "NODE_APP_IS_XAUTHOR_PS_ASSIGNED",
+      "name": "Is Agreement - Apttus X-Author Permission Set Assigned?",
+      "swimlane": "X-Author Permission Missing",
+      "type": "decision",
+      "condition_key": "is_xauthor_ps_assigned",
+      "description": "Verify whether Apttus / Conga X-Author Permission Set is assigned to the user"
+    },
+    {
+      "id": "TERMINAL_APP_XAUTHOR_PS_MISSING",
+      "name": "Confirmed: X-Author Permission Missing",
+      "swimlane": "X-Author Permission Missing",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "APP-XAUTHOR-PS-MISSING",
+      "decision_basis": "User experiencing X-Author issue, and Apttus X-Author Permission Set is missing from user record in Salesforce.",
+      "expected_criteria": "Agreement - Apttus X-Author Permission Set assigned",
+      "skill_file": "APP-XAUTHOR-permission-set-missing.md"
+    },
+    {
+      "id": "NODE_APP_DETERMINE_BU_ACCESS",
+      "name": "Determine BU and Access Level from Description",
+      "swimlane": "Business Unit Missing",
+      "type": "decision",
+      "condition_key": "can_determine_bu_access",
+      "description": "Determine whether Business Unit (BU) and Access Level are present and valid in user profile or ticket narrative"
+    },
+    {
+      "id": "TERMINAL_APP_BU_MISSING",
+      "name": "Confirmed: BU Missing",
+      "swimlane": "Business Unit Missing",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "APP-BU-MISSING",
+      "decision_basis": "User's Business Unit (BU) or Access Level cannot be determined or is missing in Salesforce configuration.",
+      "expected_criteria": "Valid Business Unit and Access Level configured",
+      "skill_file": "APP-BU-missing.md"
+    },
+    {
+      "id": "NODE_APP_HAS_APTTUS_SYMPTOM",
+      "name": "Has Description contained \"Permission or Access issue\" Symptom?",
+      "swimlane": "Apttus Permission Missing",
+      "type": "decision",
+      "condition_key": "has_apttus_access_symptom",
+      "description": "Check if description mentions general Apttus/Conga agreement permission or access errors"
+    },
+    {
+      "id": "NODE_APP_IS_APTTUS_PS_ASSIGNED",
+      "name": "Is Agreement - Apttus Permission Set Assigned?",
+      "swimlane": "Apttus Permission Missing",
+      "type": "decision",
+      "condition_key": "is_apttus_ps_assigned",
+      "description": "Verify whether Agreement - Apttus / Conga Permission Set is assigned to user"
+    },
+    {
+      "id": "TERMINAL_APP_APTTUS_PS_MISSING",
+      "name": "Confirmed: Apttus Permission Missing",
+      "swimlane": "Apttus Permission Missing",
+      "type": "terminal",
+      "status": "confirmed",
+      "issue_code": "APP-APTTUS-PS-MISSING",
+      "decision_basis": "User experiencing Apttus agreement permission or access issue, and Agreement Apttus Permission Set is missing from Salesforce.",
+      "expected_criteria": "Agreement - Apttus Permission Set assigned",
+      "skill_file": "APP-APTTUS-permission-set-missing.md"
+    },
+    {
+      "id": "TERMINAL_APP_OUT_OF_SCOPE_L3_GROUP",
+      "name": "L3 Group Resolver",
+      "swimlane": "Out Of scope",
+      "type": "terminal",
+      "status": "out_of_scope",
+      "issue_code": "OUT-OF-SCOPE-L3-GROUP",
+      "decision_basis": "All checked permissions and package licenses are already assigned in Salesforce. Escalated to L3 Group Resolver for specialized analysis.",
+      "expected_criteria": "Application permissions present",
+      "skill_file": "OUT-OF-SCOPE-resolver.md"
+    },
+    {
+      "id": "TERMINAL_APP_OUT_OF_SCOPE_L3_QUEUE",
+      "name": "L3 Queue Resolver",
+      "swimlane": "Out Of scope",
+      "type": "terminal",
+      "status": "out_of_scope",
+      "issue_code": "OUT-OF-SCOPE-L3-QUEUE",
+      "decision_basis": "Reported application issue is not CC360, Pharma, or recognized Conga symptoms. Ticket routed to L3 Queue Resolver.",
+      "expected_criteria": "Recognized application scope",
+      "skill_file": "OUT-OF-SCOPE-resolver.md"
+    }
+  ],
+  "edges": [
+    {
+      "from": "NODE_APP_TRIAGE_RESULT",
+      "to": "NODE_APP_FOLLOW_LOGIN_IS_ACTIVE",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_APP_FOLLOW_LOGIN_IS_ACTIVE",
+      "to": "NODE_APP_IS_ACTIVE",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_APP_IS_ACTIVE",
+      "to": "NODE_APP_RETRIEVE_PERM_SETS",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_IS_ACTIVE",
+      "to": "TERMINAL_APP_LOGIN_ISSUE",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_RETRIEVE_PERM_SETS",
+      "to": "NODE_APP_CLASSIFY_ISSUE_TYPE",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_APP_CLASSIFY_ISSUE_TYPE",
+      "to": "NODE_APP_IS_CC360_ISSUE",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_APP_IS_CC360_ISSUE",
+      "to": "NODE_APP_IS_CC360_PS_ASSIGNED",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_IS_CC360_ISSUE",
+      "to": "NODE_APP_IS_PHARM_ISSUE",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_PHARM_ISSUE",
+      "to": "NODE_APP_IS_COMMUNITY_PS_ASSIGNED",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_IS_PHARM_ISSUE",
+      "to": "NODE_APP_IS_CONGA_ISSUE",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_CONGA_ISSUE",
+      "to": "NODE_APP_ANALYSE_INCIDENT_DESC",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_IS_CONGA_ISSUE",
+      "to": "TERMINAL_APP_OUT_OF_SCOPE_L3_QUEUE",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_CC360_PS_ASSIGNED",
+      "to": "TERMINAL_APP_CC360_PS_MISSING",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_CC360_PS_ASSIGNED",
+      "to": "TERMINAL_APP_OUT_OF_SCOPE_L3_GROUP",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_IS_COMMUNITY_PS_ASSIGNED",
+      "to": "TERMINAL_APP_COMMUNITY_PS_MISSING",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_COMMUNITY_PS_ASSIGNED",
+      "to": "TERMINAL_APP_OUT_OF_SCOPE_L3_GROUP",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_ANALYSE_INCIDENT_DESC",
+      "to": "NODE_APP_HAS_CLM_ONBOARDING_SYMPTOM",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_APP_HAS_CLM_ONBOARDING_SYMPTOM",
+      "to": "NODE_APP_IS_CLM_PACKAGE_ASSIGNED",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_HAS_CLM_ONBOARDING_SYMPTOM",
+      "to": "NODE_APP_HAS_CRM_CONTENT_SYMPTOM",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_CLM_PACKAGE_ASSIGNED",
+      "to": "TERMINAL_APP_CLM_LICENSE_MISSING",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_CLM_PACKAGE_ASSIGNED",
+      "to": "TERMINAL_APP_OUT_OF_SCOPE_L3_GROUP",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_HAS_CRM_CONTENT_SYMPTOM",
+      "to": "NODE_APP_IS_CRM_CONTENT_USER_ENABLED",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_HAS_CRM_CONTENT_SYMPTOM",
+      "to": "NODE_APP_HAS_XAUTHOR_SYMPTOM",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_CRM_CONTENT_USER_ENABLED",
+      "to": "TERMINAL_APP_CRM_CONTENT_DISABLED",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_CRM_CONTENT_USER_ENABLED",
+      "to": "TERMINAL_APP_OUT_OF_SCOPE_L3_GROUP",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_HAS_XAUTHOR_SYMPTOM",
+      "to": "NODE_APP_IS_XAUTHOR_PS_ASSIGNED",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_HAS_XAUTHOR_SYMPTOM",
+      "to": "NODE_APP_DETERMINE_BU_ACCESS",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_XAUTHOR_PS_ASSIGNED",
+      "to": "TERMINAL_APP_XAUTHOR_PS_MISSING",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_XAUTHOR_PS_ASSIGNED",
+      "to": "NODE_APP_DETERMINE_BU_ACCESS",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_DETERMINE_BU_ACCESS",
+      "to": "TERMINAL_APP_BU_MISSING",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_DETERMINE_BU_ACCESS",
+      "to": "NODE_APP_HAS_APTTUS_SYMPTOM",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_HAS_APTTUS_SYMPTOM",
+      "to": "NODE_APP_IS_APTTUS_PS_ASSIGNED",
+      "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_HAS_APTTUS_SYMPTOM",
+      "to": "TERMINAL_APP_OUT_OF_SCOPE_L3_QUEUE",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_APTTUS_PS_ASSIGNED",
+      "to": "TERMINAL_APP_APTTUS_PS_MISSING",
+      "type": "ON_NO"
+    },
+    {
+      "from": "NODE_APP_IS_APTTUS_PS_ASSIGNED",
+      "to": "TERMINAL_APP_OUT_OF_SCOPE_L3_GROUP",
+      "type": "ON_YES"
+    }
+  ]
+}

@@ -16,6 +16,7 @@ import uuid
 from app.models.schemas import DiagnosisResult, Finding
 from app.knowledge.neo4j_repository import neo4j_repository
 from app.tools.salesforce import (
+    salesforce_get_user_permission_sets,
     salesforce_user_search,
     salesforce_get_user_details,
     salesforce_get_user_field,
@@ -302,6 +303,21 @@ class StructuredDiagnosisFlow:
                 status = current_node.get("status", "confirmed")
                 decision_basis = current_node.get("decision_basis", f"Flowchart terminated at {node_name}")
                 expected = current_node.get("expected_criteria", "Standard diagnostic pattern")
+
+                self._record_traversal_step(
+                    swimlane=swimlane,
+                    node_id=node_id,
+                    node_name=node_name,
+                    from_node=from_label,
+                    to_node="[TERMINAL]",
+                    action=f"Terminal Node: {node_name}",
+                    observed={"status": status, "issue_code": issue_code},
+                    decision_outcome=f"Terminal Outcome: {status}",
+                    explanation=decision_basis,
+                    tools_called=["KnowledgeGraphTerminalEvaluator"],
+                    status=status,
+                    graph_source=node_source,
+                )
 
                 if status == "confirmed":
                     try:
@@ -716,10 +732,27 @@ class StructuredDiagnosisFlow:
             return {"OtherOrgs": other_user or "No matching user found across EMEA, GA, ServiceMax, RIM", "Target": target}
 
         elif action_type == "check_user_active":
-            user_details = state_vars.get("user_details") or {}
+            user_details = state_vars.get("user_details")
+            if not user_details:
+                target = state_vars["target_identifier"]
+                search_results = salesforce_user_search(target)
+                identity_check = validate_user_identity_resolution(search_results)
+                matched_user = identity_check.get("user") if identity_check.get("status") in ("resolved", "unique") else None
+                if matched_user:
+                    user_id = matched_user["Id"]
+                    user_details = salesforce_get_user_details(user_id)
+                    cache["User"] = user_details
+                    cache[f"User:{user_id}"] = user_details
+                    state_vars["user_details"] = user_details
+                    state_vars["matched_user"] = matched_user
+                elif cache.get("User"):
+                    user_details = cache.get("User")
+                    state_vars["user_details"] = user_details
+                else:
+                    user_details = {}
             is_active = user_details.get("IsActive", False)
             state_vars["is_active"] = is_active
-            return {"IsActive": is_active}
+            return {"IsActive": is_active, "UserId": user_details.get("Id") if user_details else None}
 
         elif action_type == "get_deactivation_audit":
             user_details = state_vars.get("user_details") or {}
@@ -878,6 +911,54 @@ class StructuredDiagnosisFlow:
                 "DiscoveryMethod": "SOQL query for active peer user with Standard license baseline" if mirror_obj else "Fixture baseline",
                 "IsInternalLicense": is_internal,
             }
+
+
+        elif action_type == "retrieve_permission_sets":
+            target = state_vars["target_identifier"]
+            user_details = cache.get("User")
+            if not user_details:
+                search_results = salesforce_user_search(target)
+                identity_check = validate_user_identity_resolution(search_results)
+                matched_user = identity_check.get("user") if identity_check.get("status") in ("resolved", "unique") else None
+                if matched_user:
+                    user_id = matched_user["Id"]
+                    user_details = salesforce_get_user_details(user_id)
+                    cache["User"] = user_details
+                    cache[f"User:{user_id}"] = user_details
+                    state_vars["user_details"] = user_details
+            user_id = user_details.get("Id") if user_details else target
+            ps_list = salesforce_get_user_permission_sets(user_id) if user_id else []
+            state_vars["permission_sets"] = ps_list
+            return {
+                "Target": target,
+                "UserId": user_id,
+                "PermissionSetsCount": len(ps_list),
+                "AssignedPermissionSets": ps_list,
+            }
+
+        elif action_type == "classify_application":
+            app_type = "unknown"
+            if any(k in full_text for k in ["cc360", "customer 360", "cloud customer 360"]):
+                app_type = "CC360"
+            elif any(k in full_text for k in ["pharm", "pharma", "pure fishing", "community user"]):
+                app_type = "PharmApp"
+            elif any(k in full_text for k in ["conga", "clm", "apttus", "x-author", "xauthor", "contract"]):
+                app_type = "CongaApp"
+            state_vars["classified_app_type"] = app_type
+            return {"ClassifiedApp": app_type}
+
+        elif action_type == "analyze_incident_description":
+            symptoms = []
+            if any(k in full_text for k in ["clm new user", "clm onboarding", "clm setup", "onboarding"]):
+                symptoms.append("CLM_New_User_Onboarding")
+            if any(k in full_text for k in ["crm content", "content library"]):
+                symptoms.append("CRM_Content")
+            if any(k in full_text for k in ["x-author", "xauthor", "x author"]):
+                symptoms.append("X_Author")
+            if any(k in full_text for k in ["permission", "access", "apttus"]):
+                symptoms.append("Apttus_Permission")
+            state_vars["analyzed_symptoms"] = symptoms
+            return {"IdentifiedSymptoms": symptoms}
 
         return {}
 
@@ -1322,6 +1403,211 @@ class StructuredDiagnosisFlow:
                 "reasoning": "Work order closing notification failure (LOGIN-8)." if val else "General login issue.",
             }
             return val, {"WorkOrderSymptom": val}, cmp_info
+
+        elif condition_key == "is_cc360_issue":
+            val = (state_vars.get("classified_app_type") == "CC360") or any(k in full_text for k in ["cc360", "customer 360", "cloud customer 360"])
+            cmp_info = {
+                "decision_point": "CC360 Issue?",
+                "rule_evaluated": "Check if incident relates to Customer 360 (CC360)",
+                "expected_criteria": "Incident mentions CC360 or Customer 360",
+                "target_value": str(val),
+                "baseline_value": "CC360",
+                "comparison_result": "MATCH" if val else "NO MATCH",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Incident concerns Customer 360 application." if val else "Incident does not concern Customer 360.",
+            }
+            return val, {"IsCC360Issue": val}, cmp_info
+
+        elif condition_key == "is_pharm_issue":
+            val = (state_vars.get("classified_app_type") == "PharmApp") or any(k in full_text for k in ["pharm", "pharma", "pure fishing", "community user", "ps community"])
+            cmp_info = {
+                "decision_point": "Pharm App Issue?",
+                "rule_evaluated": "Check if incident relates to Pharma / Community app",
+                "expected_criteria": "Incident mentions Pharma or Community app",
+                "target_value": str(val),
+                "baseline_value": "PharmApp",
+                "comparison_result": "MATCH" if val else "NO MATCH",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Incident concerns Pharma / Community portal." if val else "Incident does not concern Pharma.",
+            }
+            return val, {"IsPharmIssue": val}, cmp_info
+
+        elif condition_key == "is_conga_issue":
+            val = (state_vars.get("classified_app_type") == "CongaApp") or any(k in full_text for k in ["conga", "clm", "apttus", "x-author", "xauthor", "contract"])
+            cmp_info = {
+                "decision_point": "Conga App Issue?",
+                "rule_evaluated": "Check if incident relates to Conga / CLM / Apttus suite",
+                "expected_criteria": "Incident mentions Conga, CLM, or Apttus",
+                "target_value": str(val),
+                "baseline_value": "CongaApp",
+                "comparison_result": "MATCH" if val else "NO MATCH",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Incident concerns Conga / CLM / Apttus application suite." if val else "Incident is out of scope for CC360, Pharma, and Conga.",
+            }
+            return val, {"IsCongaIssue": val}, cmp_info
+
+        elif condition_key == "is_cc360_ps_assigned":
+            assigned = state_vars.get("permission_sets", [])
+            val = any("cc360" in ps.lower() or "customer 360" in ps.lower() or "customer360" in ps.lower() for ps in assigned)
+            cmp_info = {
+                "decision_point": "Is CC360 Permission Set Assigned?",
+                "rule_evaluated": "Check if CC360 Permission Set is assigned in PermissionSetAssignment",
+                "expected_criteria": "CC360 Permission Set assigned to user",
+                "target_value": f"Assigned sets: {assigned}",
+                "baseline_value": "CC360 Permission Set",
+                "comparison_result": "ASSIGNED" if val else "MISSING",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "CC360 permission set is already assigned to user." if val else "CC360 permission set is MISSING from user record.",
+            }
+            return val, {"CC360_PS_Assigned": val, "PermissionSets": assigned}, cmp_info
+
+        elif condition_key == "is_community_ps_assigned":
+            assigned = state_vars.get("permission_sets", [])
+            val = any("only ps community user" in ps.lower() or "community user" in ps.lower() or "cmty-ps" in ps.lower() for ps in assigned)
+            cmp_info = {
+                "decision_point": "Is Only PS Community User Permission Set Assigned?",
+                "rule_evaluated": "Check if Only PS Community User permission set is assigned",
+                "expected_criteria": "Only PS Community User permission set assigned",
+                "target_value": f"Assigned sets: {assigned}",
+                "baseline_value": "Only PS Community User",
+                "comparison_result": "ASSIGNED" if val else "MISSING",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Only PS Community User permission set is already assigned." if val else "Only PS Community User permission set is MISSING.",
+            }
+            return val, {"Community_PS_Assigned": val, "PermissionSets": assigned}, cmp_info
+
+        elif condition_key == "has_clm_onboarding_symptom":
+            val = any(k in full_text for k in ["clm new user", "clm onboarding", "clm setup", "new user onboarding", "clm license"])
+            cmp_info = {
+                "decision_point": "Has Description contains 'CLM New User Onboarding Issue' Symptom?",
+                "rule_evaluated": "Check if incident narrative mentions CLM new user onboarding",
+                "expected_criteria": "Incident mentions CLM new user onboarding",
+                "target_value": str(val),
+                "baseline_value": "CLM Onboarding",
+                "comparison_result": "MATCH" if val else "NO MATCH",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "CLM new user onboarding symptom identified." if val else "No CLM onboarding symptom identified.",
+            }
+            return val, {"CLMOnboardingSymptom": val}, cmp_info
+
+        elif condition_key == "is_clm_package_assigned":
+            pkgs = user_details.get("PackageLicenses") or user_details.get("UserPackageLicenses") or state_vars.get("package_licenses") or []
+            val = any("clm" in str(p).lower() or "conga" in str(p).lower() or "apttus" in str(p).lower() for p in pkgs)
+            if not val and any("conga_clm_user" in ps.lower() for ps in state_vars.get("permission_sets", [])):
+                val = True
+            cmp_info = {
+                "decision_point": "Is CLM Package Assigned?",
+                "rule_evaluated": "Check UserPackageLicense for Conga CLM managed package license",
+                "expected_criteria": "Conga CLM Package License allocated to user",
+                "target_value": f"Package licenses: {pkgs}",
+                "baseline_value": "Conga CLM Package License",
+                "comparison_result": "ASSIGNED" if val else "MISSING",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Conga CLM package license is assigned." if val else "Conga CLM package license is MISSING from user record.",
+            }
+            return val, {"CLMPackageAssigned": val, "PackageLicenses": pkgs}, cmp_info
+
+        elif condition_key == "has_crm_content_symptom":
+            val = any(k in full_text for k in ["crm content", "content library", "crm content user"])
+            cmp_info = {
+                "decision_point": "Has Description contained 'CRM Content / Content Library Issue' Symptom?",
+                "rule_evaluated": "Check if incident narrative mentions CRM Content or Content Library",
+                "expected_criteria": "Incident mentions CRM Content or Content Library",
+                "target_value": str(val),
+                "baseline_value": "CRM Content",
+                "comparison_result": "MATCH" if val else "NO MATCH",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "CRM Content symptom identified." if val else "No CRM Content symptom identified.",
+            }
+            return val, {"CRMContentSymptom": val}, cmp_info
+
+        elif condition_key == "is_crm_content_user_enabled":
+            val = bool(user_details.get("UserPermissionsSFContentUser", user_details.get("UserPermissionsContentUser", False)))
+            cmp_info = {
+                "decision_point": "Is UserPermissionsContentUser Enabled?",
+                "rule_evaluated": "Check User.UserPermissionsSFContentUser flag in Salesforce User record",
+                "expected_criteria": "User.UserPermissionsSFContentUser == True",
+                "target_value": str(val),
+                "baseline_value": "True",
+                "comparison_result": "ENABLED" if val else "DISABLED",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "UserPermissionsSFContentUser is enabled." if val else "UserPermissionsSFContentUser is DISABLED on User record.",
+            }
+            return val, {"UserPermissionsSFContentUser": val}, cmp_info
+
+        elif condition_key == "has_xauthor_symptom":
+            val = any(k in full_text for k in ["x-author", "xauthor", "x author"])
+            cmp_info = {
+                "decision_point": "Has Description contained 'X-Author related issue' Symptom?",
+                "rule_evaluated": "Check if incident narrative mentions Conga X-Author",
+                "expected_criteria": "Incident mentions X-Author",
+                "target_value": str(val),
+                "baseline_value": "X-Author",
+                "comparison_result": "MATCH" if val else "NO MATCH",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "X-Author symptom identified." if val else "No X-Author symptom identified.",
+            }
+            return val, {"XAuthorSymptom": val}, cmp_info
+
+        elif condition_key == "is_xauthor_ps_assigned":
+            assigned = state_vars.get("permission_sets", [])
+            val = any("x-author" in ps.lower() or "xauthor" in ps.lower() or "x_author" in ps.lower() for ps in assigned)
+            cmp_info = {
+                "decision_point": "Is Agreement - Apttus X-Author Permission Set Assigned?",
+                "rule_evaluated": "Check if Apttus X-Author Permission Set is in PermissionSetAssignment",
+                "expected_criteria": "Agreement - Apttus X-Author Permission Set assigned",
+                "target_value": f"Assigned sets: {assigned}",
+                "baseline_value": "Apttus X-Author Permission Set",
+                "comparison_result": "ASSIGNED" if val else "MISSING",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Apttus X-Author Permission Set is assigned." if val else "Apttus X-Author Permission Set is MISSING from user record.",
+            }
+            return val, {"XAuthor_PS_Assigned": val, "PermissionSets": assigned}, cmp_info
+
+        elif condition_key == "can_determine_bu_access":
+            bu_missing_in_text = any(k in full_text for k in ["bu missing", "business unit missing", "missing bu", "no bu", "access level missing"])
+            has_bu_field = bool(user_details.get("BusinessUnit") or user_details.get("Division") or user_details.get("Contact", {}).get("WizardCountry") or user_details.get("WizardCountry"))
+            val = has_bu_field and not bu_missing_in_text
+            cmp_info = {
+                "decision_point": "Determine BU and Access Level from Description",
+                "rule_evaluated": "Determine if Business Unit (BU) and Access Level are determinable",
+                "expected_criteria": "Valid Business Unit and Access Level identified",
+                "target_value": f"BU Field: {user_details.get('BusinessUnit') or user_details.get('Division') or user_details.get('WizardCountry')}, Missing Flag: {bu_missing_in_text}",
+                "baseline_value": "Valid BU & Access Level",
+                "comparison_result": "DETERMINED" if val else "MISSING",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Business Unit and Access Level are determined." if val else "Business Unit or Access Level cannot be determined / is MISSING.",
+            }
+            return val, {"BU_Determinable": val}, cmp_info
+
+        elif condition_key == "has_apttus_access_symptom":
+            val = any(k in full_text for k in ["permission", "access", "apttus", "agreement"])
+            cmp_info = {
+                "decision_point": "Has Description contained 'Permission or Access issue' Symptom?",
+                "rule_evaluated": "Check if incident narrative mentions general Apttus/Agreement permission or access issue",
+                "expected_criteria": "Incident mentions Apttus permission or access issue",
+                "target_value": str(val),
+                "baseline_value": "Apttus Access",
+                "comparison_result": "MATCH" if val else "NO MATCH",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "General Apttus permission/access symptom identified." if val else "No Apttus permission/access symptom identified.",
+            }
+            return val, {"ApttusAccessSymptom": val}, cmp_info
+
+        elif condition_key == "is_apttus_ps_assigned":
+            assigned = state_vars.get("permission_sets", [])
+            val = any("apttus" in ps.lower() or "agreement" in ps.lower() or "conga_agreement" in ps.lower() for ps in assigned)
+            cmp_info = {
+                "decision_point": "Is Agreement - Apttus Permission Set Assigned?",
+                "rule_evaluated": "Check if Agreement - Apttus Permission Set is assigned in PermissionSetAssignment",
+                "expected_criteria": "Agreement - Apttus Permission Set assigned to user",
+                "target_value": f"Assigned sets: {assigned}",
+                "baseline_value": "Agreement - Apttus Permission Set",
+                "comparison_result": "ASSIGNED" if val else "MISSING",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Agreement - Apttus Permission Set is assigned." if val else "Agreement - Apttus Permission Set is MISSING from user record.",
+            }
+            return val, {"Apttus_PS_Assigned": val, "PermissionSets": assigned}, cmp_info
 
         cmp_info = {
             "decision_point": condition_key,

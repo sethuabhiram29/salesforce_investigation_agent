@@ -132,8 +132,9 @@ class DiagnosisAgent:
         state.setdefault("step_audit_trail", [])
         evidence_cache = state.setdefault("evidence_cache", {})
 
-        # Structured Flow: For LOGIN issues, follow the exact flowchart decision tree knowledge graph
-        if initial_domain == "LOGIN":
+        # Structured Flow: For LOGIN or APPLICATION issues, follow the exact flowchart decision tree knowledge graph
+        if initial_domain in ("LOGIN", "APPLICATION"):
+            context["domain"] = initial_domain
             structured_flow = StructuredDiagnosisFlow()
             diagnosis_result, new_evidence, traversal_steps = structured_flow.execute(
                 target_identifier=identifier,

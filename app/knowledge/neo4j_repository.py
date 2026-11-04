@@ -32,7 +32,10 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 CSV_PATH = ROOT / "data" / "investigation.csv"
-FLOWCHART_JSON_PATH = ROOT / "data" / "login_flowchart_graph.json"
+MASTER_FLOWCHART_JSON_PATH = ROOT / 'data' / 'master_decision_tree_graph.json'
+LOGIN_FLOWCHART_JSON_PATH = ROOT / 'data' / 'login_flowchart_graph.json'
+APP_FLOWCHART_JSON_PATH = ROOT / 'data' / 'application_flowchart_graph.json'
+FLOWCHART_JSON_PATH = MASTER_FLOWCHART_JSON_PATH if MASTER_FLOWCHART_JSON_PATH.exists() else LOGIN_FLOWCHART_JSON_PATH
 
 
 class Neo4jKnowledgeRepository:
@@ -320,9 +323,26 @@ class Neo4jKnowledgeRepository:
                 self._flowchart_cache = {"nodes": [], "edges": []}
         return self._flowchart_cache
 
+    def get_triage_master_node(self) -> Dict[str, Any]:
+        """Retrieve the master triage entry point (NODE_TRIAGE_AGENT)."""
+        node = self.get_flowchart_node("NODE_TRIAGE_AGENT")
+        if node:
+            return node
+        return {
+            "id": "NODE_TRIAGE_AGENT",
+            "name": "Triage Agent",
+            "swimlane": "Incident Triage",
+            "type": "action",
+            "domain": "TRIAGE",
+            "source": "local_knowledge_graph",
+        }
+
     def get_flowchart_start_node(self, domain: str = "LOGIN") -> Dict[str, Any]:
         """Retrieve root starting node of the decision tree from Neo4j (or local graph)."""
         normalized = domain.strip().upper()
+        if normalized in ("TRIAGE", "ROOT", "MASTER"):
+            return self.get_triage_master_node()
+
         if self._is_connected and self.driver:
             try:
                 with self.driver.session() as session:
@@ -341,16 +361,20 @@ class Neo4jKnowledgeRepository:
 
         # Fallback to local graph store
         graph = self._load_local_flowchart_graph()
-        start_id = graph.get("start_node_id", "NODE_TRIAGE_RESULT")
+        domain_roots = graph.get("domain_roots", {
+            "LOGIN": "NODE_TRIAGE_RESULT",
+            "APPLICATION": "NODE_APP_TRIAGE_RESULT",
+        })
+        start_id = domain_roots.get(normalized) or graph.get("start_node_id", "NODE_TRIAGE_RESULT")
         node = self.get_flowchart_node(start_id)
         if node:
             node["source"] = "local_knowledge_graph"
             return node
         return {
             "id": start_id,
-            "name": "Triage Result Ingestion",
+            "name": f"Triage Result Ingestion ({normalized})",
             "type": "action",
-            "swimlane": "Wrong Login Url",
+            "swimlane": "Login Issue",
             "source": "local_knowledge_graph",
         }
 
@@ -410,22 +434,29 @@ class Neo4jKnowledgeRepository:
         no_target = None
         next_target = None
 
+        domain_routes = {}
         for edge in graph.get("edges", []):
             if edge.get("from") == node_id:
-                e_type = edge.get("type")
-                if e_type == "ON_YES":
+                e_type = edge.get("type", "")
+                if e_type.startswith("ON_DOMAIN_"):
+                    dom = edge.get("domain") or e_type.replace("ON_DOMAIN_", "")
+                    domain_routes[dom] = edge.get("to")
+                elif e_type == "ON_YES":
                     yes_target = edge.get("to")
                 elif e_type == "ON_NO":
                     no_target = edge.get("to")
                 elif e_type == "TRANSITIONS_TO":
                     next_target = edge.get("to")
 
-        return {
+        res_dict = {
             "yes_target": yes_target,
             "no_target": no_target,
             "next_target": next_target,
             "source": "local_knowledge_graph",
         }
+        if domain_routes:
+            res_dict["domain_routes"] = domain_routes
+        return res_dict
 
     def get_approved_orgs(self) -> List[Dict[str, Any]]:
         """Retrieve approved enterprise organizations and their URLs from Neo4j or local graph."""
