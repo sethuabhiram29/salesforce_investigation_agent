@@ -94,3 +94,4 @@ If you do not receive the verification email within 15 minutes, please reply to 
 
 - **Pre-Remediation:** `User.IsActive == True AND User.EmailVerified == False`
 - **Post-Remediation:** Guidance delivered to ServiceNow work notes, and user instructed to complete email verification.
+

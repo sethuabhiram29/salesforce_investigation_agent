@@ -320,6 +320,23 @@ class TriageAgent:
         state["triage_result"] = triage_result.model_dump()
         state["login_url"] = extracted_login_url
 
+        # Dynamically record triage milestone on ticket using ServiceNow tool
+        inc_id = incident.get("incident_id")
+        if inc_id:
+            from app.tools.service_now import servicenow_add_work_notes
+            servicenow_add_work_notes(
+                incident_id=inc_id,
+                notes=(
+                    f"Triage Stage Completed:\n"
+                    f"• Domain: {domain} (ambiguous={is_ambiguous})\n"
+                    f"• Target User: {resolved_affected.get('Email') if resolved_affected else affected_target}\n"
+                    f"• Mirror User: {resolved_mirror.get('Email') if resolved_mirror else mirror_target}\n"
+                    f"• Login URL: {extracted_login_url or 'None provided'}"
+                ),
+                stage="triage",
+                agent_name="TriageAgent",
+            )
+
         # 5. Retrieve historical precedents strictly filtered by classified domain
         try:
             past_cases = fetch_historical_context_for_state(

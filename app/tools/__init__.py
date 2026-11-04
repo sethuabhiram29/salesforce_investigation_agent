@@ -1,10 +1,124 @@
-"""Investigation tools exposed to ToolNode.
+"""Investigation and resolution tools package.
 
-Tool groups:
-- Salesforce evidence (read-only during diagnosis)
-- Historical knowledge (read-only)
-- Knowledge graph (read-only, parameterized)
-- Resolution (restricted write, post-approval only)
-- Verification (read-only)
-- ServiceNow (permission-scoped)
+Exposes first-class tools that agents can invoke dynamically at any point
+in the investigation lifecycle:
+- ServiceNow ticket tools (read incident, add work notes, reroute ticket, record RITM, resolve)
+- Salesforce read-only tools (SOSL/SOQL queries, user detail, object permissions, audit trail, delegated admin check)
+- Enterprise environment tools (validate login URL, cross-org user search, external identity team engagement)
+- Resolution mutation tools (update user field, deliver resolution guidance)
 """
+
+from app.tools.salesforce import (
+    salesforce_user_search,
+    salesforce_get_basic_user,
+    salesforce_get_user_field,
+    salesforce_get_user_details,
+    salesforce_execute_sosl,
+    salesforce_execute_soql,
+    salesforce_get_object_permissions,
+    salesforce_get_record_access,
+    salesforce_get_user_permission_sets,
+    salesforce_compare_user_access,
+    salesforce_get_contact_wizard_details,
+    salesforce_find_peer_mirror_user,
+    salesforce_update_user,
+    salesforce_validate_login_url,
+    salesforce_cross_org_user_search,
+    salesforce_audit_trail_search,
+    salesforce_check_delegated_admin,
+    identity_team_engage,
+    salesforce_user_search_tool,
+    salesforce_get_basic_user_tool,
+    salesforce_get_user_field_tool,
+    salesforce_get_user_details_tool,
+    salesforce_execute_sosl_tool,
+    salesforce_execute_soql_tool,
+    salesforce_get_object_permissions_tool,
+    salesforce_get_record_access_tool,
+    salesforce_get_user_permission_sets_tool,
+    salesforce_compare_user_access_tool,
+    salesforce_get_contact_wizard_details_tool,
+    salesforce_find_peer_mirror_user_tool,
+    salesforce_update_user_tool,
+    salesforce_validate_login_url_tool,
+    salesforce_cross_org_user_search_tool,
+    salesforce_audit_trail_search_tool,
+    salesforce_check_delegated_admin_tool,
+    identity_team_engage_tool,
+    get_diagnosis_tools,
+    get_resolution_tools,
+)
+
+from app.tools.service_now import (
+    servicenow_get_incident,
+    servicenow_add_work_notes,
+    servicenow_reroute_incident,
+    servicenow_record_ritm_guidance,
+    servicenow_get_work_notes,
+    servicenow_resolve_incident,
+    servicenow_get_incident_tool,
+    servicenow_add_work_notes_tool,
+    servicenow_reroute_incident_tool,
+    servicenow_record_ritm_guidance_tool,
+    servicenow_get_work_notes_tool,
+    servicenow_resolve_incident_tool,
+    get_servicenow_tools,
+)
+
+__all__ = [
+    # Salesforce read & query
+    "salesforce_user_search",
+    "salesforce_get_basic_user",
+    "salesforce_get_user_field",
+    "salesforce_get_user_details",
+    "salesforce_execute_sosl",
+    "salesforce_execute_soql",
+    "salesforce_get_object_permissions",
+    "salesforce_get_record_access",
+    "salesforce_get_user_permission_sets",
+    "salesforce_compare_user_access",
+    "salesforce_get_contact_wizard_details",
+    "salesforce_find_peer_mirror_user",
+    "salesforce_update_user",
+    "salesforce_validate_login_url",
+    "salesforce_cross_org_user_search",
+    "salesforce_audit_trail_search",
+    "salesforce_check_delegated_admin",
+    "identity_team_engage",
+    # Salesforce Tool wrappers
+    "salesforce_user_search_tool",
+    "salesforce_get_basic_user_tool",
+    "salesforce_get_user_field_tool",
+    "salesforce_get_user_details_tool",
+    "salesforce_execute_sosl_tool",
+    "salesforce_execute_soql_tool",
+    "salesforce_get_object_permissions_tool",
+    "salesforce_get_record_access_tool",
+    "salesforce_get_user_permission_sets_tool",
+    "salesforce_compare_user_access_tool",
+    "salesforce_get_contact_wizard_details_tool",
+    "salesforce_find_peer_mirror_user_tool",
+    "salesforce_update_user_tool",
+    "salesforce_validate_login_url_tool",
+    "salesforce_cross_org_user_search_tool",
+    "salesforce_audit_trail_search_tool",
+    "salesforce_check_delegated_admin_tool",
+    "identity_team_engage_tool",
+    # ServiceNow tools
+    "servicenow_get_incident",
+    "servicenow_add_work_notes",
+    "servicenow_reroute_incident",
+    "servicenow_record_ritm_guidance",
+    "servicenow_get_work_notes",
+    "servicenow_resolve_incident",
+    "servicenow_get_incident_tool",
+    "servicenow_add_work_notes_tool",
+    "servicenow_reroute_incident_tool",
+    "servicenow_record_ritm_guidance_tool",
+    "servicenow_get_work_notes_tool",
+    "servicenow_resolve_incident_tool",
+    # Tool bundles
+    "get_diagnosis_tools",
+    "get_resolution_tools",
+    "get_servicenow_tools",
+]

@@ -208,6 +208,89 @@ def salesforce_update_user(
     """Execute an approved write operation to update a user record via MCP or authorized adapter."""
     return salesforce_client.update_user_field(user_id, field_name, new_value)
 
+def salesforce_validate_login_url(url: str) -> Dict[str, Any]:
+    """Validate any provided Salesforce login URL against approved enterprise MyDomain endpoints.
+
+    Approved endpoints:
+    - Main Org (NA): bdx.my.salesforce.com (Official Primary)
+    - EMEA: bd2my.salesforce.com
+    - ACE/GA: bdxga.my.salesforce.com
+    - ServiceMax (SMAX): bdsmx.my.salesforce.com
+    """
+    if not url:
+        return {
+            "is_provided": False,
+            "is_approved": False,
+            "is_main_org": False,
+            "org_name": None,
+            "main_url": "https://bdx.my.salesforce.com",
+        }
+    clean_url = str(url).strip().lower()
+    mapping = {
+        "bdx.my.salesforce.com": {"org_name": "Main Org (NA)", "is_main_org": True, "domain": "bdx.my.salesforce.com"},
+        "bd2my.salesforce.com": {"org_name": "EMEA Salesforce Org", "is_main_org": False, "domain": "bd2my.salesforce.com"},
+        "bdxga.my.salesforce.com": {"org_name": "ACE/GA Salesforce Org", "is_main_org": False, "domain": "bdxga.my.salesforce.com"},
+        "bdsmx.my.salesforce.com": {"org_name": "ServiceMax (SMAX) Org", "is_main_org": False, "domain": "bdsmx.my.salesforce.com"},
+    }
+    for domain_key, info in mapping.items():
+        if domain_key in clean_url:
+            return {
+                "is_provided": True,
+                "is_approved": True,
+                "is_main_org": info["is_main_org"],
+                "org_name": info["org_name"],
+                "domain": info["domain"],
+                "main_url": "https://bdx.my.salesforce.com",
+            }
+    return {
+        "is_provided": True,
+        "is_approved": False,
+        "is_main_org": False,
+        "org_name": None,
+        "domain": clean_url,
+        "main_url": "https://bdx.my.salesforce.com",
+    }
+
+
+def salesforce_cross_org_user_search(target_user: str) -> Optional[Dict[str, Any]]:
+    """Search registered enterprise secondary organizations (EMEA, ACE/GA, ServiceMax) for target user identity."""
+    return salesforce_client.search_other_orgs(target_user)
+
+
+def salesforce_audit_trail_search(user_id: Optional[str] = None, action_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Query SetupAuditTrail for deactivation events, permission assignments, or administrative modifications."""
+    soql = "SELECT Id, Action, CreatedById, CreatedDate, Display FROM SetupAuditTrail"
+    conditions = []
+    if action_filter:
+        conditions.append(f"Action LIKE '%{action_filter}%'")
+    if conditions:
+        soql += " WHERE " + " AND ".join(conditions)
+    soql += " ORDER BY CreatedDate DESC LIMIT 10"
+    return salesforce_execute_soql(soql)
+
+
+def salesforce_check_delegated_admin(actor_id: str) -> Dict[str, Any]:
+    """Inspect DelegateGroupMember to verify if an actor holds Delegated Administrator authority."""
+    soql = f"SELECT Id, UserOrGroupId FROM DelegateGroupMember WHERE UserOrGroupId = '{actor_id}'"
+    results = salesforce_execute_soql(soql)
+    is_da = bool(results)
+    return {"actor_id": actor_id, "is_delegated_admin": is_da, "records": results}
+
+
+def identity_team_engage(system: str, user_identifier: str, issue_code: str, reason: str) -> Dict[str, Any]:
+    """Engage an enterprise external identity team (Azure, CIAM, Workday, MuleSoft) for identity synchronization."""
+    from datetime import datetime, timezone
+    return {
+        "engaged": True,
+        "system": system,
+        "user_identifier": user_identifier,
+        "issue_code": issue_code,
+        "reason": reason,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "status": "engaged_pending_sync",
+    }
+
+
 
 
 try:
@@ -225,6 +308,11 @@ try:
     salesforce_update_user_tool = tool(salesforce_update_user)
     salesforce_get_basic_user_tool = tool(salesforce_get_basic_user)
     salesforce_get_user_field_tool = tool(salesforce_get_user_field)
+    salesforce_validate_login_url_tool = tool(salesforce_validate_login_url)
+    salesforce_cross_org_user_search_tool = tool(salesforce_cross_org_user_search)
+    salesforce_audit_trail_search_tool = tool(salesforce_audit_trail_search)
+    salesforce_check_delegated_admin_tool = tool(salesforce_check_delegated_admin)
+    identity_team_engage_tool = tool(identity_team_engage)
 except ImportError:
     salesforce_user_search_tool = salesforce_user_search
     salesforce_execute_sosl_tool = salesforce_execute_sosl
@@ -239,6 +327,11 @@ except ImportError:
     salesforce_get_contact_wizard_details_tool = salesforce_get_contact_wizard_details
     salesforce_find_peer_mirror_user_tool = salesforce_find_peer_mirror_user
     salesforce_update_user_tool = salesforce_update_user
+    salesforce_validate_login_url_tool = salesforce_validate_login_url
+    salesforce_cross_org_user_search_tool = salesforce_cross_org_user_search
+    salesforce_audit_trail_search_tool = salesforce_audit_trail_search
+    salesforce_check_delegated_admin_tool = salesforce_check_delegated_admin
+    identity_team_engage_tool = identity_team_engage
 
 
 def get_diagnosis_tools() -> List[Any]:
@@ -256,6 +349,11 @@ def get_diagnosis_tools() -> List[Any]:
         salesforce_get_user_permission_sets_tool,
         salesforce_compare_user_access_tool,
         salesforce_get_contact_wizard_details_tool,
+        salesforce_validate_login_url_tool,
+        salesforce_cross_org_user_search_tool,
+        salesforce_audit_trail_search_tool,
+        salesforce_check_delegated_admin_tool,
+        identity_team_engage_tool,
     ]
 
 

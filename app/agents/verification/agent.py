@@ -234,4 +234,20 @@ class VerificationAgent:
             },
         })
 
+        inc_id = state.get("incident", {}).get("incident_id")
+        if inc_id:
+            from app.tools.service_now import servicenow_add_work_notes
+            servicenow_add_work_notes(
+                incident_id=inc_id,
+                notes=(
+                    f"State Verification Outcome: {'VERIFIED' if verified else 'FAILED'}\n"
+                    f"• Target Field: User.{target_field}\n"
+                    f"• Comparison: {verif_comparison}\n"
+                    f"• Live Observed: {verif_obs_values}\n"
+                    f"• Decision Basis: {verif_decision_basis}"
+                ),
+                stage="verification",
+                agent_name="VerificationAgent",
+            )
+
         return state

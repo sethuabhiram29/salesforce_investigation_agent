@@ -20,6 +20,16 @@ from app.tools.salesforce import (
     salesforce_get_user_field,
     salesforce_find_peer_mirror_user,
     salesforce_execute_soql,
+    salesforce_validate_login_url,
+    salesforce_cross_org_user_search,
+    salesforce_audit_trail_search,
+    salesforce_check_delegated_admin,
+    identity_team_engage,
+)
+from app.tools.service_now import (
+    servicenow_add_work_notes,
+    servicenow_reroute_incident,
+    servicenow_record_ritm_guidance,
 )
 from app.utils.validators import validate_user_identity_resolution
 
@@ -236,8 +246,10 @@ class StructuredDiagnosisFlow:
         current_node = start_node
         from_label = "[Triage Agent]"
 
+        incident_id = context.get("incident_id") if isinstance(context, dict) else None
         # Runtime evaluation state
         state_vars: Dict[str, Any] = {
+            "incident_id": incident_id,
             "target_identifier": target_identifier,
             "affected_user_id": affected_user_id,
             "login_url": login_url,
@@ -338,6 +350,20 @@ class StructuredDiagnosisFlow:
                         obs_dict["EmployeeNumber"] = state_vars["target_emp_id"]
                     if state_vars.get("target_fed_id") is not None:
                         obs_dict["FederationIdentifier"] = state_vars["target_fed_id"]
+
+                    # Dynamically invoke ServiceNow tool when diagnosis locks
+                    inc_id = state_vars.get("incident_id")
+                    if inc_id:
+                        if issue_code in ["LOGIN-1", "LOGIN-001"]:
+                            servicenow_reroute_incident(inc_id, "HCL Service Desk", decision_basis, agent_name="StructuredDiagnosisFlow")
+                        elif issue_code in ["LOGIN-1B", "LOGIN-001B"]:
+                            servicenow_reroute_incident(inc_id, "Salesforce Regional Support", decision_basis, agent_name="StructuredDiagnosisFlow")
+                        elif issue_code in ["LOGIN-3A", "LOGIN-003A"]:
+                            servicenow_record_ritm_guidance(inc_id, "Manage User - Account Reactivation", decision_basis, agent_name="StructuredDiagnosisFlow")
+                        elif issue_code in ["LOGIN-5", "LOGIN-005"]:
+                            servicenow_record_ritm_guidance(inc_id, "Manage User - Federation ID Correction", decision_basis, agent_name="StructuredDiagnosisFlow")
+                        else:
+                            servicenow_add_work_notes(inc_id, f"Diagnosed root cause '{issue_code}': {decision_basis}", stage="diagnosis", agent_name="StructuredDiagnosisFlow")
 
                     return (
                         self._build_confirmed_result(

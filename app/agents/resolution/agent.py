@@ -349,6 +349,21 @@ class ResolutionAgent:
                 "message": tool_result.get("error", "Failed to execute update"),
             }
 
+        inc_id = state.get("incident", {}).get("incident_id")
+        if inc_id:
+            from app.tools.service_now import servicenow_add_work_notes
+            servicenow_add_work_notes(
+                incident_id=inc_id,
+                notes=(
+                    f"Remediation Executed (Approval ID: {approval.get('approval_id')}):\n"
+                    f"• Target Field: User.{field_name} = '{proposed_value}'\n"
+                    f"• Tool Invoked: {tool_name}\n"
+                    f"• Status: Successfully applied. Advancing to State Verification."
+                ),
+                stage="execution",
+                agent_name="ResolutionAgent",
+            )
+
         return state
 
     def _derive_remediation_action(
