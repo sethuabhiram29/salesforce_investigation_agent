@@ -503,6 +503,20 @@ class ResolutionAgent:
                 "FederationIdentifier requires CIAM validation",
             ]
 
+        # Unverified Email Scenario (LOGIN-10)
+        elif issue_code in ["LOGIN-10", "LOGIN-010"] or "email not verified" in hist_resolution.lower():
+            target_field = "Guidance"
+            proposed_value = "Salesforce User account email address is unverified, blocking portal and SSO login. Dispatch email verification link and provide verification completion instructions to user."
+            justification = (
+                "Per SOP LOGIN-010: User exists in NA Org AND IsActive = True AND User.EmailVerified == False. "
+                "Dispatch email verification link and inform user to complete verification."
+            )
+            preconditions = [
+                "User exists in NA Org",
+                "User.IsActive == True",
+                "User.EmailVerified == False",
+            ]
+
         # FederationIdentifier Missing or Azure Mismatch (LOGIN-4 / LOGIN-6)
         elif (
             "FederationIdentifier" in hist_resolution
