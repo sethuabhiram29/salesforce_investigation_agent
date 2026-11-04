@@ -490,9 +490,9 @@
       "name": "Follow Login flowchart to find IsActive",
       "swimlane": "Login Issue",
       "type": "action",
-      "action_type": "check_user_active",
+      "action_type": "follow_login_flow",
       "tool_name": "salesforce_get_basic_user",
-      "description": "Inspect user record in Salesforce to verify account active status (User.IsActive)",
+      "description": "Follow Login flowchart to verify user existence and active status in NA org",
       "domain": "APPLICATION"
     },
     {
@@ -779,6 +779,15 @@
       "expected_criteria": "Recognized application scope",
       "skill_file": "OUT-OF-SCOPE-resolver.md",
       "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_ROUTE_BY_DOMAIN",
+      "name": "Is Application Domain?",
+      "swimlane": "Domain Routing",
+      "type": "decision",
+      "condition_key": "is_application_domain",
+      "description": "Determine whether ticket belongs to APPLICATION domain vs LOGIN domain after verifying user exists and is active in NA org",
+      "domain": "SHARED"
     }
   ],
   "edges": [
@@ -850,11 +859,6 @@
       "from": "NODE_FETCH_SF_USER",
       "to": "NODE_IS_ACTIVE",
       "type": "TRANSITIONS_TO"
-    },
-    {
-      "from": "NODE_IS_ACTIVE",
-      "to": "NODE_FETCH_MIRROR_USER",
-      "type": "ON_YES"
     },
     {
       "from": "NODE_IS_ACTIVE",
@@ -1037,11 +1041,6 @@
       "type": "TRANSITIONS_TO"
     },
     {
-      "from": "NODE_APP_FOLLOW_LOGIN_IS_ACTIVE",
-      "to": "NODE_APP_IS_ACTIVE",
-      "type": "TRANSITIONS_TO"
-    },
-    {
       "from": "NODE_APP_IS_ACTIVE",
       "to": "NODE_APP_RETRIEVE_PERM_SETS",
       "type": "ON_YES"
@@ -1205,6 +1204,30 @@
       "from": "NODE_APP_IS_APTTUS_PS_ASSIGNED",
       "to": "TERMINAL_APP_OUT_OF_SCOPE_L3_GROUP",
       "type": "ON_YES"
+    },
+    {
+      "from": "NODE_IS_ACTIVE",
+      "to": "NODE_ROUTE_BY_DOMAIN",
+      "type": "ON_YES",
+      "description": "User confirmed active in NA Org -> Route to domain-specific diagnosis"
+    },
+    {
+      "from": "NODE_ROUTE_BY_DOMAIN",
+      "to": "NODE_APP_RETRIEVE_PERM_SETS",
+      "type": "ON_YES",
+      "description": "Domain is APPLICATION -> proceed to application permission sets and package license checks"
+    },
+    {
+      "from": "NODE_ROUTE_BY_DOMAIN",
+      "to": "NODE_FETCH_MIRROR_USER",
+      "type": "ON_NO",
+      "description": "Domain is LOGIN -> proceed to login SSO, mirror user, and Federation ID checks"
+    },
+    {
+      "from": "NODE_APP_FOLLOW_LOGIN_IS_ACTIVE",
+      "to": "NODE_SEARCH_MAIN_ORG",
+      "type": "TRANSITIONS_TO",
+      "description": "Application flow follows login mainflow: search user in NA main org"
     }
   ],
   "approved_orgs": [

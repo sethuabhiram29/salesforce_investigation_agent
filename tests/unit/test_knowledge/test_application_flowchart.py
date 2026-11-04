@@ -35,7 +35,7 @@ class TestApplicationFlowchartKnowledgeGraph(unittest.TestCase):
         self.assertEqual(app_start["domain"], "APPLICATION")
 
     def test_app_flow_inactive_user_routes_to_login(self):
-        """Verify inactive user in Application domain is routed to Login Issue terminal node."""
+        """Verify inactive user in Application domain is routed to Login deactivation diagnosis (LOGIN-3A)."""
         res, ev, steps = self.flow.execute(
             target_identifier="john.smith@acme.corp",
             context={
@@ -44,9 +44,64 @@ class TestApplicationFlowchartKnowledgeGraph(unittest.TestCase):
                 "description": "User account inactive when checking CC360",
             },
         )
-        self.assertEqual(res.issue_code, "LOGIN-ISSUE-INACTIVE")
-        terminal_steps = [s for s in steps if s.get("graph_node_id") == "TERMINAL_APP_LOGIN_ISSUE"]
-        self.assertTrue(len(terminal_steps) > 0)
+        self.assertEqual(res.status, "confirmed")
+        self.assertEqual(res.issue_code, "LOGIN-3A")
+        node_ids = [s.get("graph_node_id") for s in steps]
+        self.assertIn("NODE_SEARCH_MAIN_ORG", node_ids)
+        self.assertIn("NODE_IS_ACTIVE", node_ids)
+        self.assertIn("NODE_RETRIEVE_DEACT_AUDIT", node_ids)
+        self.assertIn("TERMINAL_LOGIN_3", node_ids)
+
+    def test_app_flow_nonexistent_user_routes_to_login_1(self):
+        """Verify user not found in NA org or any regional org routes to LOGIN-1 (HCL Service Desk)."""
+        res, ev, steps = self.flow.execute(
+            target_identifier="nonexistent_caller@acme.corp",
+            context={
+                "domain": "APPLICATION",
+                "short_description": "User unable to access CC360 app",
+                "description": "User says cannot login to CC360",
+            },
+        )
+        self.assertEqual(res.status, "confirmed")
+        self.assertEqual(res.issue_code, "LOGIN-1")
+        node_ids = [s.get("graph_node_id") for s in steps]
+        self.assertIn("NODE_SEARCH_MAIN_ORG", node_ids)
+        self.assertIn("NODE_SEARCH_OTHER_ORGS", node_ids)
+        self.assertIn("TERMINAL_LOGIN_1", node_ids)
+
+    def test_app_flow_cross_org_user_routes_to_login_1b(self):
+        """Verify user found in a secondary/regional org routes to LOGIN-1B (Regional team reroute)."""
+        res, ev, steps = self.flow.execute(
+            target_identifier="emea.user@acme.corp",
+            context={
+                "domain": "APPLICATION",
+                "short_description": "User unable to access Conga app",
+                "description": "User cannot access agreements",
+            },
+        )
+        self.assertEqual(res.status, "confirmed")
+        self.assertEqual(res.issue_code, "LOGIN-1B")
+        node_ids = [s.get("graph_node_id") for s in steps]
+        self.assertIn("NODE_SEARCH_MAIN_ORG", node_ids)
+        self.assertIn("NODE_SEARCH_OTHER_ORGS", node_ids)
+        self.assertIn("TERMINAL_LOGIN_1B", node_ids)
+
+    def test_app_flow_shared_node_route_by_domain(self):
+        """Verify active user traverses shared nodes and branches at NODE_ROUTE_BY_DOMAIN into APPLICATION domain."""
+        res, ev, steps = self.flow.execute(
+            target_identifier="cc360.user@acme.corp",
+            context={
+                "domain": "APPLICATION",
+                "short_description": "User unable to access CC360 app",
+                "description": "Caller reports permission error accessing Customer 360",
+            },
+        )
+        self.assertEqual(res.status, "confirmed")
+        node_ids = [s.get("graph_node_id") for s in steps]
+        self.assertIn("NODE_SEARCH_MAIN_ORG", node_ids)
+        self.assertIn("NODE_IS_ACTIVE", node_ids)
+        self.assertIn("NODE_ROUTE_BY_DOMAIN", node_ids)
+        self.assertIn("NODE_APP_RETRIEVE_PERM_SETS", node_ids)
 
     def test_app_flow_cc360_permission_missing(self):
         """Verify active user with CC360 issue and no permission set confirms APP-CC360-PS-MISSING."""

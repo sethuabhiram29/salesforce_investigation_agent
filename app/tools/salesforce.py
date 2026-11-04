@@ -92,6 +92,20 @@ def salesforce_get_user_permission_sets(user_id: str) -> List[str]:
     """Retrieve assigned Permission Sets for a user via SOQL/MCP."""
     return salesforce_client.get_user_permission_sets(user_id)
 
+def salesforce_get_user_package_licenses(user_id: str) -> List[str]:
+    """Retrieve assigned UserPackageLicenses for a user via SOQL/MCP."""
+    return salesforce_client.get_user_package_licenses(user_id)
+
+
+def salesforce_get_user_public_groups(user_id: str) -> List[str]:
+    """Retrieve assigned Public Groups for a user via SOQL/MCP."""
+    return salesforce_client.get_user_public_groups(user_id)
+
+
+def salesforce_add_user_to_public_group(user_id: str, group_name: str) -> Dict[str, Any]:
+    """Add a user to a Public Group (support team is authorized)."""
+    return salesforce_client.add_user_to_public_group(user_id, group_name)
+
 
 def salesforce_get_contact_wizard_details(user_id: str) -> Dict[str, Any]:
     """Retrieve Contact record details including WizardCountry field."""
@@ -342,6 +356,9 @@ try:
     salesforce_audit_trail_search_tool = tool(salesforce_audit_trail_search)
     salesforce_check_delegated_admin_tool = tool(salesforce_check_delegated_admin)
     identity_team_engage_tool = tool(identity_team_engage)
+    salesforce_get_user_package_licenses_tool = tool(salesforce_get_user_package_licenses)
+    salesforce_get_user_public_groups_tool = tool(salesforce_get_user_public_groups)
+    salesforce_add_user_to_public_group_tool = tool(salesforce_add_user_to_public_group)
 except ImportError:
     salesforce_user_search_tool = salesforce_user_search
     salesforce_execute_sosl_tool = salesforce_execute_sosl
@@ -361,6 +378,9 @@ except ImportError:
     salesforce_audit_trail_search_tool = salesforce_audit_trail_search
     salesforce_check_delegated_admin_tool = salesforce_check_delegated_admin
     identity_team_engage_tool = identity_team_engage
+    salesforce_get_user_package_licenses_tool = salesforce_get_user_package_licenses
+    salesforce_get_user_public_groups_tool = salesforce_get_user_public_groups
+    salesforce_add_user_to_public_group_tool = salesforce_add_user_to_public_group
 
 
 def get_diagnosis_tools() -> List[Any]:
@@ -376,6 +396,8 @@ def get_diagnosis_tools() -> List[Any]:
         salesforce_get_object_permissions_tool,
         salesforce_get_record_access_tool,
         salesforce_get_user_permission_sets_tool,
+        salesforce_get_user_package_licenses_tool,
+        salesforce_get_user_public_groups_tool,
         salesforce_compare_user_access_tool,
         salesforce_get_contact_wizard_details_tool,
         salesforce_validate_login_url_tool,
@@ -391,4 +413,5 @@ def get_resolution_tools() -> List[Any]:
     return [
         salesforce_get_user_details_tool,
         salesforce_update_user_tool,
+        salesforce_add_user_to_public_group_tool,
     ]

@@ -19,9 +19,9 @@
       "name": "Follow Login flowchart to find IsActive",
       "swimlane": "Login Issue",
       "type": "action",
-      "action_type": "check_user_active",
+      "action_type": "follow_login_flow",
       "tool_name": "salesforce_get_basic_user",
-      "description": "Inspect user record in Salesforce to verify account active status (User.IsActive)"
+      "description": "Follow Login flowchart to verify user existence and active status in NA org"
     },
     {
       "id": "NODE_APP_IS_ACTIVE",
@@ -288,11 +288,6 @@
       "type": "TRANSITIONS_TO"
     },
     {
-      "from": "NODE_APP_FOLLOW_LOGIN_IS_ACTIVE",
-      "to": "NODE_APP_IS_ACTIVE",
-      "type": "TRANSITIONS_TO"
-    },
-    {
       "from": "NODE_APP_IS_ACTIVE",
       "to": "NODE_APP_RETRIEVE_PERM_SETS",
       "type": "ON_YES"
@@ -456,6 +451,12 @@
       "from": "NODE_APP_IS_APTTUS_PS_ASSIGNED",
       "to": "TERMINAL_APP_OUT_OF_SCOPE_L3_GROUP",
       "type": "ON_YES"
+    },
+    {
+      "from": "NODE_APP_FOLLOW_LOGIN_IS_ACTIVE",
+      "to": "NODE_SEARCH_MAIN_ORG",
+      "type": "TRANSITIONS_TO",
+      "description": "Application flow follows login mainflow: search user in NA main org"
     }
   ]
 }

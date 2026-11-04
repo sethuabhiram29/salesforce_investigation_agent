@@ -12,3 +12,4 @@ venv/
 *.db
 certs/*.key
 certs/server.key
+scratch/

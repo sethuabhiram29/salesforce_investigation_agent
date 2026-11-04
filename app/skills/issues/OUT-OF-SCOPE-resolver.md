@@ -31,3 +31,4 @@ An application issue is determined to be outside the scope of self-service autom
 1. Record complete investigation audit trail into ServiceNow ticket work notes.
 2. Re-route incident to L3 Resolver Group or Queue via `servicenow_reroute_incident`.
 3. Inform requester that the issue has been escalated to specialized application tier-3 engineering.
+

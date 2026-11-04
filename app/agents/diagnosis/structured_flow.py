@@ -16,6 +16,9 @@ import uuid
 from app.models.schemas import DiagnosisResult, Finding
 from app.knowledge.neo4j_repository import neo4j_repository
 from app.tools.salesforce import (
+    salesforce_get_user_package_licenses,
+    salesforce_get_user_public_groups,
+    salesforce_add_user_to_public_group,
     salesforce_get_user_permission_sets,
     salesforce_user_search,
     salesforce_get_user_details,
@@ -256,6 +259,9 @@ class StructuredDiagnosisFlow:
             "affected_user_id": affected_user_id,
             "login_url": login_url,
             "is_valid_url": True,
+            "domain": domain,
+            "package_licenses": [],
+            "public_groups": [],
             "mirror_user": mirror_user,
             "user_details": cache.get("User"),
             "matched_user": None,
@@ -539,7 +545,14 @@ class StructuredDiagnosisFlow:
         """Execute the tool or inspection logic specified by an ActionNode."""
         action_type = node.get("action_type")
 
-        if action_type == "ingest_triage":
+        if action_type == "follow_login_flow":
+            target = state_vars.get("target_identifier")
+            return {
+                "Target": target,
+                "Action": "Following Login Mainflow: verifying user existence and active status in NA org before domain diagnosis",
+            }
+
+        elif action_type == "ingest_triage":
             return {
                 "AffectedUser": state_vars.get("affected_user_id"),
                 "LoginURL": state_vars.get("login_url"),
@@ -928,12 +941,18 @@ class StructuredDiagnosisFlow:
                     state_vars["user_details"] = user_details
             user_id = user_details.get("Id") if user_details else target
             ps_list = salesforce_get_user_permission_sets(user_id) if user_id else []
+            pkg_list = salesforce_get_user_package_licenses(user_id) if user_id else []
+            grp_list = salesforce_get_user_public_groups(user_id) if user_id else []
             state_vars["permission_sets"] = ps_list
+            state_vars["package_licenses"] = pkg_list
+            state_vars["public_groups"] = grp_list
             return {
                 "Target": target,
                 "UserId": user_id,
                 "PermissionSetsCount": len(ps_list),
                 "AssignedPermissionSets": ps_list,
+                "PackageLicenses": pkg_list,
+                "PublicGroups": grp_list,
             }
 
         elif action_type == "classify_application":
@@ -973,7 +992,28 @@ class StructuredDiagnosisFlow:
         user_details = state_vars.get("user_details") or {}
         mirror_obj = state_vars.get("mirror_user_details") or state_vars.get("mirror_user") or (cache.get("User:mirror") if cache else None)
 
-        if condition_key == "has_login_url":
+        if condition_key == "is_application_domain":
+            domain_val = state_vars.get("domain", "")
+            if not domain_val:
+                domain_val = "APPLICATION" if any(k in full_text for k in ["cc360", "pharm", "conga", "clm", "apttus", "x-author", "xauthor"]) else "LOGIN"
+            val = (str(domain_val).upper() == "APPLICATION")
+            cmp_info = {
+                "decision_point": "Is Application Domain?",
+                "rule_evaluated": "Determine if ticket domain is APPLICATION (vs LOGIN) after verifying user exists and is active in NA org",
+                "expected_criteria": "Domain == 'APPLICATION'",
+                "target_value": f"Domain: '{domain_val}'",
+                "baseline_value": "APPLICATION",
+                "comparison_result": "MATCH - Ticket belongs to APPLICATION domain" if val else "NO - Ticket belongs to LOGIN domain",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": (
+                    "User exists and is active in NA Org. Ticket belongs to APPLICATION domain. Traversing edge ON_YES to retrieve application permission sets and licenses."
+                    if val
+                    else "User exists and is active in NA Org. Ticket belongs to LOGIN domain. Traversing edge ON_NO to inspect mirror user and Federation ID."
+                ),
+            }
+            return val, {"IsApplicationDomain": val, "Domain": domain_val}, cmp_info
+
+        elif condition_key == "has_login_url":
             target_url = state_vars.get("login_url")
             val = bool(target_url)
             cmp_info = {

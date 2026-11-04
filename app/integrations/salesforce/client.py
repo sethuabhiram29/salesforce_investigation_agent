@@ -29,6 +29,7 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -424,6 +425,34 @@ class SalesforceMCPClient:
                 "UserOrGroupId": "005xx00000DA_ADMIN",
             }]
 
+        if "userpackagelicense" in q_lower:
+            results = []
+            for u in self._working_fixtures:
+                u_id = str(u.get("Id", "")).lower()
+                if u_id in q_lower:
+                    for pkg in u.get("PackageLicenses", u.get("UserPackageLicenses", [])):
+                        results.append({
+                            "Id": f"050xx{uuid.uuid4().hex[:10]}",
+                            "UserId": u.get("Id"),
+                            "PackageLicense": {"NamespacePrefix": pkg, "Name": pkg},
+                            "PackageLicenseId": f"033xx{uuid.uuid4().hex[:10]}",
+                        })
+            return results
+
+        if "groupmember" in q_lower or ("group" in q_lower and "userorgroupid" in q_lower):
+            results = []
+            for u in self._working_fixtures:
+                u_id = str(u.get("Id", "")).lower()
+                if u_id in q_lower:
+                    for grp in u.get("PublicGroups", u.get("Groups", [])):
+                        results.append({
+                            "Id": f"011xx{uuid.uuid4().hex[:10]}",
+                            "UserOrGroupId": u.get("Id"),
+                            "GroupId": f"00Gxx{uuid.uuid4().hex[:10]}",
+                            "Group": {"Name": grp, "DeveloperName": str(grp).replace(" ", "_")},
+                        })
+            return results
+
         for u in self._working_fixtures:
             u_email = str(u.get("Email", "")).lower()
             u_id = str(u.get("Id", "")).lower()
@@ -672,6 +701,52 @@ class SalesforceMCPClient:
 
         user = self.get_user_details(user_id)
         return list(user.get("PermissionSets", [])) if "error" not in user else []
+
+    def get_user_package_licenses(self, user_id: str) -> List[str]:
+        """Retrieve assigned UserPackageLicenses for a user."""
+        soql = f"SELECT Id, PackageLicense.NamespacePrefix FROM UserPackageLicense WHERE UserId = '{user_id}'"
+        records = self.execute_soql(soql)
+        if records:
+            return [
+                r.get("PackageLicense", {}).get("NamespacePrefix")
+                for r in records
+                if isinstance(r.get("PackageLicense"), dict) and r.get("PackageLicense", {}).get("NamespacePrefix")
+            ]
+        user = self.get_user_details(user_id)
+        return list(user.get("PackageLicenses", user.get("UserPackageLicenses", []))) if "error" not in user else []
+
+    def get_user_public_groups(self, user_id: str) -> List[str]:
+        """Retrieve assigned Public Groups for a user."""
+        soql = f"SELECT Id, Group.Name FROM GroupMember WHERE UserOrGroupId = '{user_id}'"
+        records = self.execute_soql(soql)
+        if records:
+            return [
+                r.get("Group", {}).get("Name")
+                for r in records
+                if isinstance(r.get("Group"), dict) and r.get("Group", {}).get("Name")
+            ]
+        user = self.get_user_details(user_id)
+        return list(user.get("PublicGroups", user.get("Groups", []))) if "error" not in user else []
+
+    def add_user_to_public_group(self, user_id: str, group_name: str) -> Dict[str, Any]:
+        """Add a user to a Public Group in Salesforce (Support team is authorized)."""
+        for u in self._working_fixtures:
+            if u.get("Id") == user_id.strip():
+                grps = u.setdefault("PublicGroups", [])
+                if group_name not in grps:
+                    grps.append(group_name)
+                return {
+                    "success": True,
+                    "user_id": user_id,
+                    "group_name": group_name,
+                    "status": "added",
+                }
+        return {
+            "success": True,
+            "user_id": user_id,
+            "group_name": group_name,
+            "status": "provisioned",
+        }
 
     def update_user_field(self, user_id: str, field_name: str, new_value: Any) -> Dict[str, Any]:
         """Execute an approved write operation to update a user record."""
