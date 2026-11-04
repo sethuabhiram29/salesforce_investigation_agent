@@ -363,7 +363,9 @@ class Neo4jKnowledgeRepository:
         graph = self._load_local_flowchart_graph()
         domain_roots = graph.get("domain_roots", {
             "LOGIN": "NODE_TRIAGE_RESULT",
-            "APPLICATION": "NODE_APP_TRIAGE_RESULT",
+            "APPLICATION": "NODE_TRIAGE_RESULT",
+            "RECORD": "NODE_TRIAGE_RESULT",
+            "OBJECT": "NODE_TRIAGE_RESULT",
         })
         start_id = domain_roots.get(normalized) or graph.get("start_node_id", "NODE_TRIAGE_RESULT")
         node = self.get_flowchart_node(start_id)
@@ -415,16 +417,23 @@ class Neo4jKnowledgeRepository:
                         OPTIONAL MATCH (curr)-[:ON_YES]->(yes:FlowNode)
                         OPTIONAL MATCH (curr)-[:ON_NO]->(no:FlowNode)
                         OPTIONAL MATCH (curr)-[:TRANSITIONS_TO]->(nxt:FlowNode)
-                        RETURN yes.id AS yes_target, no.id AS no_target, nxt.id AS next_target
+                        OPTIONAL MATCH (curr)-[r:ROUTES_TO]->(dom:FlowNode)
+                        RETURN yes.id AS yes_target, no.id AS no_target, nxt.id AS next_target,
+                               collect({domain: r.domain, target: dom.id}) AS d_routes
                     """, id=node_id)
                     rec = res.single()
                     if rec:
-                        return {
+                        res_obj = {
                             "yes_target": rec["yes_target"],
                             "no_target": rec["no_target"],
                             "next_target": rec["next_target"],
                             "source": "neo4j",
                         }
+                        raw_routes = rec.get("d_routes") or []
+                        d_map = {item["domain"]: item["target"] for item in raw_routes if item.get("domain") and item.get("target")}
+                        if d_map:
+                            res_obj["domain_routes"] = d_map
+                        return res_obj
             except Exception as e:
                 logger.warning("Neo4j error in get_node_transitions: %s. Using local graph store.", e)
 

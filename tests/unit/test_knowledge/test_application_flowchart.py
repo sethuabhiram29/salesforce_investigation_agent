@@ -14,25 +14,18 @@ class TestApplicationFlowchartKnowledgeGraph(unittest.TestCase):
         self.flow = StructuredDiagnosisFlow()
 
     def test_master_triage_agent_root_node(self):
-        """Verify NODE_TRIAGE_AGENT is the master root node and routes to LOGIN and APPLICATION."""
+        """Verify NODE_TRIAGE_AGENT is the master root node."""
         master_root = neo4j_repository.get_triage_master_node()
         self.assertEqual(master_root["id"], "NODE_TRIAGE_AGENT")
         self.assertEqual(master_root["name"], "Triage Agent")
 
-        transitions = neo4j_repository.get_node_transitions("NODE_TRIAGE_AGENT")
-        self.assertIn("domain_routes", transitions)
-        routes = transitions["domain_routes"]
-        self.assertEqual(routes.get("LOGIN"), "NODE_TRIAGE_RESULT")
-        self.assertEqual(routes.get("APPLICATION"), "NODE_APP_TRIAGE_RESULT")
-
     def test_domain_start_nodes_retrieval(self):
-        """Verify each domain resolves to its respective starting node from the knowledge graph."""
+        """Verify all domains enter through the initial triage verification root node."""
         login_start = neo4j_repository.get_flowchart_start_node("LOGIN")
         self.assertEqual(login_start["id"], "NODE_TRIAGE_RESULT")
 
         app_start = neo4j_repository.get_flowchart_start_node("APPLICATION")
-        self.assertEqual(app_start["id"], "NODE_APP_TRIAGE_RESULT")
-        self.assertEqual(app_start["domain"], "APPLICATION")
+        self.assertEqual(app_start["id"], "NODE_TRIAGE_RESULT")
 
     def test_app_flow_inactive_user_routes_to_login(self):
         """Verify inactive user in Application domain is routed to Login deactivation diagnosis (LOGIN-3A)."""
@@ -87,7 +80,7 @@ class TestApplicationFlowchartKnowledgeGraph(unittest.TestCase):
         self.assertIn("TERMINAL_LOGIN_1B", node_ids)
 
     def test_app_flow_shared_node_route_by_domain(self):
-        """Verify active user traverses shared nodes and branches at NODE_ROUTE_BY_DOMAIN into APPLICATION domain."""
+        """Verify active user traverses initial verification flow and branches at NODE_DOMAIN_ROUTER into NODE_DOMAIN_APPLICATION."""
         res, ev, steps = self.flow.execute(
             target_identifier="cc360.user@acme.corp",
             context={
@@ -100,7 +93,8 @@ class TestApplicationFlowchartKnowledgeGraph(unittest.TestCase):
         node_ids = [s.get("graph_node_id") for s in steps]
         self.assertIn("NODE_SEARCH_MAIN_ORG", node_ids)
         self.assertIn("NODE_IS_ACTIVE", node_ids)
-        self.assertIn("NODE_ROUTE_BY_DOMAIN", node_ids)
+        self.assertIn("NODE_DOMAIN_ROUTER", node_ids)
+        self.assertIn("NODE_DOMAIN_APPLICATION", node_ids)
         self.assertIn("NODE_APP_RETRIEVE_PERM_SETS", node_ids)
 
     def test_app_flow_cc360_permission_missing(self):

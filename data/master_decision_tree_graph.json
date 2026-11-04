@@ -1,7 +1,7 @@
 {
   "name": "Master Multi-Domain Investigation Decision Tree Knowledge Graph",
   "version": "2.0",
-  "start_node_id": "NODE_TRIAGE_AGENT",
+  "start_node_id": "NODE_TRIAGE_RESULT",
   "domains": [
     "LOGIN",
     "APPLICATION",
@@ -10,7 +10,9 @@
   ],
   "domain_roots": {
     "LOGIN": "NODE_TRIAGE_RESULT",
-    "APPLICATION": "NODE_APP_TRIAGE_RESULT"
+    "APPLICATION": "NODE_TRIAGE_RESULT",
+    "RECORD": "NODE_TRIAGE_RESULT",
+    "OBJECT": "NODE_TRIAGE_RESULT"
   },
   "nodes": [
     {
@@ -788,6 +790,77 @@
       "condition_key": "is_application_domain",
       "description": "Determine whether ticket belongs to APPLICATION domain vs LOGIN domain after verifying user exists and is active in NA org",
       "domain": "SHARED"
+    },
+    {
+      "id": "NODE_DOMAIN_ROUTER",
+      "name": "Route by Incident Domain",
+      "swimlane": "Domain Dispatch",
+      "type": "decision",
+      "condition_key": "incident_domain",
+      "description": "User exists and is active in NA Org. Route to corresponding domain deep diagnosis node based on ticket domain: LOGIN, APPLICATION, RECORD, or OBJECT",
+      "domain": "SHARED"
+    },
+    {
+      "id": "NODE_DOMAIN_LOGIN",
+      "name": "Login Domain",
+      "swimlane": "Login Deep Diagnosis",
+      "type": "action",
+      "action_type": "enter_login_domain",
+      "tool_name": "LoginDiagnosisDispatcher",
+      "description": "Proceed to LOGIN domain deep diagnosis: evaluate SSO identity, mirror user, and FederationIdentifier",
+      "domain": "LOGIN"
+    },
+    {
+      "id": "NODE_DOMAIN_APPLICATION",
+      "name": "Application Domain",
+      "swimlane": "Application Deep Diagnosis",
+      "type": "action",
+      "action_type": "enter_application_domain",
+      "tool_name": "ApplicationDiagnosisDispatcher",
+      "description": "Proceed to APPLICATION domain deep diagnosis: evaluate CC360, Pharma, Conga CLM package, CRM Content, X-Author, BU, and Apttus BU permission sets",
+      "domain": "APPLICATION"
+    },
+    {
+      "id": "NODE_DOMAIN_RECORD",
+      "name": "Record Domain",
+      "swimlane": "Record Deep Diagnosis",
+      "type": "action",
+      "action_type": "enter_record_domain",
+      "tool_name": "RecordDiagnosisDispatcher",
+      "description": "Proceed to RECORD domain deep diagnosis: evaluate report/dashboard, opportunity/case, and record access",
+      "domain": "RECORD"
+    },
+    {
+      "id": "NODE_DOMAIN_OBJECT",
+      "name": "Object Domain",
+      "swimlane": "Object Deep Diagnosis",
+      "type": "action",
+      "action_type": "enter_object_domain",
+      "tool_name": "ObjectDiagnosisDispatcher",
+      "description": "Proceed to OBJECT domain deep diagnosis: evaluate Wizard app access, object CRUD permissions, and Product Search",
+      "domain": "OBJECT"
+    },
+    {
+      "id": "TERMINAL_RECORD_SCOPE",
+      "name": "Record Domain Investigation Scope",
+      "swimlane": "Record Deep Diagnosis",
+      "type": "terminal",
+      "status": "escalated",
+      "issue_code": "RECORD-OUT-OF-SCOPE",
+      "decision_basis": "Active user verified in NA Org. Ticket belongs to RECORD domain (Report/Dashboard folder sharing, Opportunity/Case row sharing, or general record access).",
+      "expected_criteria": "Standard diagnostic pattern",
+      "domain": "RECORD"
+    },
+    {
+      "id": "TERMINAL_OBJECT_SCOPE",
+      "name": "Object Domain Investigation Scope",
+      "swimlane": "Object Deep Diagnosis",
+      "type": "terminal",
+      "status": "escalated",
+      "issue_code": "OBJECT-OUT-OF-SCOPE",
+      "decision_basis": "Active user verified in NA Org. Ticket belongs to OBJECT domain (Wizard app access, object CRUD permissions, Field-Level Security, or Product Search).",
+      "expected_criteria": "Standard diagnostic pattern",
+      "domain": "OBJECT"
     }
   ],
   "edges": [
@@ -1206,28 +1279,68 @@
       "type": "ON_YES"
     },
     {
-      "from": "NODE_IS_ACTIVE",
-      "to": "NODE_ROUTE_BY_DOMAIN",
-      "type": "ON_YES",
-      "description": "User confirmed active in NA Org -> Route to domain-specific diagnosis"
-    },
-    {
-      "from": "NODE_ROUTE_BY_DOMAIN",
-      "to": "NODE_APP_RETRIEVE_PERM_SETS",
-      "type": "ON_YES",
-      "description": "Domain is APPLICATION -> proceed to application permission sets and package license checks"
-    },
-    {
-      "from": "NODE_ROUTE_BY_DOMAIN",
-      "to": "NODE_FETCH_MIRROR_USER",
-      "type": "ON_NO",
-      "description": "Domain is LOGIN -> proceed to login SSO, mirror user, and Federation ID checks"
-    },
-    {
       "from": "NODE_APP_FOLLOW_LOGIN_IS_ACTIVE",
       "to": "NODE_SEARCH_MAIN_ORG",
       "type": "TRANSITIONS_TO",
       "description": "Application flow follows login mainflow: search user in NA main org"
+    },
+    {
+      "from": "NODE_IS_ACTIVE",
+      "to": "NODE_DOMAIN_ROUTER",
+      "type": "ON_YES",
+      "description": "User confirmed active in NA Org -> Route by incident domain"
+    },
+    {
+      "from": "NODE_DOMAIN_ROUTER",
+      "to": "NODE_DOMAIN_LOGIN",
+      "type": "ON_DOMAIN_LOGIN",
+      "domain": "LOGIN",
+      "description": "Active user in NA org -> Proceed to Login domain"
+    },
+    {
+      "from": "NODE_DOMAIN_ROUTER",
+      "to": "NODE_DOMAIN_APPLICATION",
+      "type": "ON_DOMAIN_APPLICATION",
+      "domain": "APPLICATION",
+      "description": "Active user in NA org -> Proceed to Application domain"
+    },
+    {
+      "from": "NODE_DOMAIN_ROUTER",
+      "to": "NODE_DOMAIN_RECORD",
+      "type": "ON_DOMAIN_RECORD",
+      "domain": "RECORD",
+      "description": "Active user in NA org -> Proceed to Record domain"
+    },
+    {
+      "from": "NODE_DOMAIN_ROUTER",
+      "to": "NODE_DOMAIN_OBJECT",
+      "type": "ON_DOMAIN_OBJECT",
+      "domain": "OBJECT",
+      "description": "Active user in NA org -> Proceed to Object domain"
+    },
+    {
+      "from": "NODE_DOMAIN_LOGIN",
+      "to": "NODE_FETCH_MIRROR_USER",
+      "type": "TRANSITIONS_TO",
+      "description": "Enter Login domain deep diagnosis: fetch mirror user and evaluate SSO / Federation ID"
+    },
+    {
+      "from": "NODE_DOMAIN_APPLICATION",
+      "to": "NODE_APP_RETRIEVE_PERM_SETS",
+      "type": "TRANSITIONS_TO",
+      "description": "Enter Application domain deep diagnosis: retrieve permission sets, licenses, and BU groups"
+    },
+    {
+      "from": "NODE_DOMAIN_RECORD",
+      "to": "TERMINAL_RECORD_SCOPE",
+      "type": "TRANSITIONS_TO",
+      "description": "Enter Record domain deep diagnosis"
+    },
+    {
+      "from": "NODE_DOMAIN_OBJECT",
+      "to": "TERMINAL_OBJECT_SCOPE",
+      "type": "TRANSITIONS_TO",
+      "description": "Enter Object domain deep diagnosis"
     }
   ],
   "approved_orgs": [

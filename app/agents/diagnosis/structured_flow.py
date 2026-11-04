@@ -488,12 +488,20 @@ class StructuredDiagnosisFlow:
                     recorded_evidence.append(ev_item)
                     new_evidence.append(ev_item)
 
-                if condition_met:
-                    next_node_id = transitions.get("yes_target")
+                domain_routes = transitions.get('domain_routes', {})
+                if domain_routes:
+                    target_domain = str(state_vars.get('domain') or 'LOGIN').upper()
+                    next_node_id = domain_routes.get(target_domain)
+                    if not next_node_id:
+                        next_node_id = domain_routes.get('LOGIN') or next(iter(domain_routes.values()))
+                    decision_str = f"Domain: '{target_domain}'"
+                    edge_used = f"ON_DOMAIN_{target_domain}"
+                elif condition_met:
+                    next_node_id = transitions.get('yes_target')
                     decision_str = "Outcome: 'Yes'"
                     edge_used = "ON_YES"
                 else:
-                    next_node_id = transitions.get("no_target")
+                    next_node_id = transitions.get('no_target')
                     decision_str = "Outcome: 'No'"
                     edge_used = "ON_NO"
 
@@ -545,7 +553,19 @@ class StructuredDiagnosisFlow:
         """Execute the tool or inspection logic specified by an ActionNode."""
         action_type = node.get("action_type")
 
-        if action_type == "follow_login_flow":
+        if action_type == "enter_login_domain":
+            return {"Domain": "LOGIN", "Status": "Entering Login Domain Deep Diagnosis"}
+
+        elif action_type == "enter_application_domain":
+            return {"Domain": "APPLICATION", "Status": "Entering Application Domain Deep Diagnosis"}
+
+        elif action_type == "enter_record_domain":
+            return {"Domain": "RECORD", "Status": "Entering Record Domain Deep Diagnosis"}
+
+        elif action_type == "enter_object_domain":
+            return {"Domain": "OBJECT", "Status": "Entering Object Domain Deep Diagnosis"}
+
+        elif action_type == "follow_login_flow":
             target = state_vars.get("target_identifier")
             return {
                 "Target": target,
@@ -992,7 +1012,24 @@ class StructuredDiagnosisFlow:
         user_details = state_vars.get("user_details") or {}
         mirror_obj = state_vars.get("mirror_user_details") or state_vars.get("mirror_user") or (cache.get("User:mirror") if cache else None)
 
-        if condition_key == "is_application_domain":
+        if condition_key == "incident_domain":
+            domain_val = str(state_vars.get("domain") or "").upper()
+            if not domain_val:
+                domain_val = "APPLICATION" if any(k in full_text for k in ["cc360", "pharm", "conga", "clm", "apttus", "x-author", "xauthor"]) else "LOGIN"
+            state_vars["domain"] = domain_val
+            cmp_info = {
+                "decision_point": "Route by Incident Domain",
+                "rule_evaluated": "User verified active in NA Org. Route to corresponding domain deep diagnosis node based on ticket domain",
+                "expected_criteria": "Active user in NA Org with valid domain classification (LOGIN, APPLICATION, RECORD, OBJECT)",
+                "target_value": f"Domain: '{domain_val}'",
+                "baseline_value": "Domain Dispatch Standard",
+                "comparison_result": f"Routing to '{domain_val}' domain",
+                "decision_outcome": domain_val,
+                "reasoning": f"User is confirmed active in NA Org. Ticket belongs to '{domain_val}' domain. Traversing edge ON_DOMAIN_{domain_val} to {domain_val} domain node.",
+            }
+            return True, {"Domain": domain_val}, cmp_info
+
+        elif condition_key == "is_application_domain":
             domain_val = state_vars.get("domain", "")
             if not domain_val:
                 domain_val = "APPLICATION" if any(k in full_text for k in ["cc360", "pharm", "conga", "clm", "apttus", "x-author", "xauthor"]) else "LOGIN"
