@@ -191,5 +191,47 @@ class TestTriageAgent(unittest.TestCase):
         self.assertEqual(res.get("affected_user", {}).get("resolution_source"), "description_named_entity")
 
 
+    def test_extract_login_url_from_narrative(self):
+        # 1. Bookmarked invalid URL
+        desc1 = "User jane.doe@acme.corp is trying to log into Salesforce using bookmarked URL https://old-portal.invalid.com/login instead of production org bdx.my.salesforce.com."
+        url1 = self.agent._extract_login_url(desc1)
+        self.assertEqual(url1, "https://old-portal.invalid.com/login")
+
+        # 2. Main production org
+        desc2 = "User emma.watson@acme.corp reports login failure on main org bdx.my.salesforce.com."
+        url2 = self.agent._extract_login_url(desc2)
+        self.assertEqual(url2, "https://bdx.my.salesforce.com")
+
+        # 3. Portal URL
+        desc3 = "User cannot access portal bdx.my.site.com/BDPharmSystems/s/."
+        url3 = self.agent._extract_login_url(desc3)
+        self.assertEqual(url3, "https://bdx.my.site.com/BDPharmSystems/s/")
+
+        # 4. Explicit label
+        desc4 = "User issue. Login URL: https://bd2my.salesforce.com"
+        url4 = self.agent._extract_login_url(desc4)
+        self.assertEqual(url4, "https://bd2my.salesforce.com")
+
+        # 5. No URL in narrative
+        desc5 = "User cannot access account details."
+        url5 = self.agent._extract_login_url(desc5)
+        self.assertIsNone(url5)
+
+    @patch("app.agents.triage.agent.fetch_historical_context_for_state")
+    def test_triage_run_populates_extracted_url_from_description(self, mock_history):
+        mock_history.return_value = []
+        state: InvestigationState = {
+            "incident": {
+                "incident_id": "INC109",
+                "short_description": "User login failure",
+                "description": "User jane.doe@acme.corp is trying to log into Salesforce using bookmarked URL https://old-portal.invalid.com/login instead of production.",
+                "caller_email": "jane.doe@acme.corp",
+            }
+        }
+        res = self.agent.run(state)
+        self.assertEqual(res.get("login_url"), "https://old-portal.invalid.com/login")
+        self.assertEqual(res.get("triage_result", {}).get("login_url"), "https://old-portal.invalid.com/login")
+
+
 if __name__ == "__main__":
     unittest.main()

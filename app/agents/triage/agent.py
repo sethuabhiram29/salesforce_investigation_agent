@@ -96,11 +96,12 @@ class TriageAgent:
         reasoning = llm_output.get("reasoning", "")
         resolution_source = llm_output.get("resolution_source", "contextual_narrative")
         extracted_objects = llm_output.get("objects", [])
+        narrative_login_url = self._extract_login_url(f"{summary} {desc}")
         extracted_login_url = (
-            incident.get("login_url")
-            or incident.get("url")
+            narrative_login_url
             or llm_output.get("login_url")
-            or self._extract_login_url(f"{summary} {desc}")
+            or incident.get("login_url")
+            or incident.get("url")
         )
 
         # 2. Deterministic Salesforce Verification: Affected User
@@ -623,13 +624,13 @@ class TriageAgent:
         }
 
     def _extract_login_url(self, text: str) -> Optional[str]:
-        """Extract Salesforce login URL or custom endpoint mentioned in ticket narrative."""
+        """Extract Salesforce login URL, portal link, or custom endpoint mentioned in ticket narrative."""
         if not text:
             return None
 
-        # Pattern 1: Explicit labelled URL/endpoint pattern (e.g. "Login URL: https://..." or "Endpoint: bdx.my.salesforce.com")
+        # Pattern 1: Explicit labelled URL/endpoint pattern (e.g. "Login URL: https://...", "portal URL - https://...")
         label_match = re.search(
-            r"(?:login\s*url|login_url|login\s*link|endpoint|target\s*url|accessing\s*url|link|url)\s*[:=]\s*([^\s,;\"\'<>]+)",
+            r"(?:login\s*url|login_url|login\s*link|endpoint|target\s*url|accessing\s*url|portal\s*url|ps\s*portal\s*url|cc360\s*url|portal|link|url)\s*[:=-]\s*([^\s,;\"\'<>]+)",
             text,
             re.IGNORECASE,
         )
@@ -639,15 +640,30 @@ class TriageAgent:
                 return cand
             return f"https://{cand}"
 
-        # Pattern 2: Explicit http/https URL anywhere in narrative
+        # Pattern 2: Contextual action phrases indicating attempted destination (e.g. "trying to log into ... using bookmarked URL https://old-portal.invalid.com/login")
+        action_match = re.search(
+            r"(?:bookmarked\s*url|trying to log into|trying to access|logging into|logging in at|accessing|browsing to|navigating to|connecting to)\s+(?:salesforce\s+)?(?:using\s+)?([^\s,;\"\'<>]+)",
+            text,
+            re.IGNORECASE,
+        )
+        if action_match:
+            cand = action_match.group(1).strip(".,;:)")
+            inner_url = re.search(r"https?://[^\s<>'\"\)\]]+|\b[a-zA-Z0-9_.-]+\.[a-zA-Z]{2,}(?:/[^\s<>'\"\)\]]*)?", cand)
+            if inner_url:
+                c = inner_url.group(0).rstrip(".,;:)")
+                if not c.lower().startswith("http://") and not c.lower().startswith("https://"):
+                    return f"https://{c}"
+                return c
+
+        # Pattern 3: Explicit http/https URL anywhere in narrative
         url_match = re.search(r"https?://[^\s<>'\"\)\]]+", text)
         if url_match:
             cand = url_match.group(0).rstrip(".,;:)")
             return cand
 
-        # Pattern 3: Bare enterprise Salesforce domain (bdx, bd2my, bdxga, bdsmx, *.salesforce.com, *.force.com)
+        # Pattern 4: Bare enterprise Salesforce / Site / Force domain
         domain_match = re.search(
-            r"\b([a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*\.(?:salesforce\.com|force\.com)(?:/[^\s<>'\"\)\]]*)?)",
+            r"\b([a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*\.(?:salesforce\.com|force\.com|site\.com)(?:/[^\s<>'\"\)\]]*)?)",
             text,
             re.IGNORECASE,
         )
@@ -655,36 +671,31 @@ class TriageAgent:
             cand = domain_match.group(1).rstrip(".,;:)")
             return f"https://{cand}"
 
-        # Pattern 4: Bare domain for approved orgs specifically
+        # Pattern 5: Bare domain for approved orgs or portal endpoints specifically
         approved_tokens = [
             "bdx.my.salesforce.com",
             "bd2my.salesforce.com",
             "bd2.my.salesforce.com",
             "bdxga.my.salesforce.com",
             "bdsmx.my.salesforce.com",
+            "bdx.my.site.com",
+            "login.salesforce.com",
         ]
         text_lower = text.lower()
         for tok in approved_tokens:
             if tok in text_lower:
+                m = re.search(re.escape(tok) + r"(?:/[^\s<>'\"\)\]]*)?", text, re.IGNORECASE)
+                if m:
+                    cand = m.group(0).rstrip(".,;:)")
+                    return f"https://{cand}"
                 return f"https://{tok}"
 
-        # Pattern 5: Contextual action phrases like "accessing <url>", "navigating to <url>", "logging in at <url>"
-        context_match = re.search(
-            r"(?:accessing|navigating to|logging in at|browsing to|trying to access|connecting to)\s+([a-zA-Z0-9_.-]+\.[a-zA-Z]{2,}(?:/[^\s<>'\"\)\]]*)?)",
-            text,
-            re.IGNORECASE,
-        )
-        if context_match:
-            cand = context_match.group(1).rstrip(".,;:)")
-            if not cand.startswith("http://") and not cand.startswith("https://"):
-                return f"https://{cand}"
-            return cand
-
-        # Pattern 6: Any token containing salesforce.com or force.com
+        # Pattern 6: Any token containing salesforce.com, force.com, or site.com
         for token in text.split():
             clean = token.strip("(),;\"'<>")
-            if "salesforce.com" in clean.lower() or "force.com" in clean.lower():
-                if not clean.lower().startswith("http://") and not clean.lower().startswith("https://"):
+            clean_lower = clean.lower()
+            if "salesforce.com" in clean_lower or "force.com" in clean_lower or "site.com" in clean_lower:
+                if not clean_lower.startswith("http://") and not clean_lower.startswith("https://"):
                     return f"https://{clean}"
                 return clean
 

@@ -2276,31 +2276,69 @@ class StructuredDiagnosisFlow:
         if not text:
             return None
         import re
-        # Pattern 1: Labelled URL
+        # Pattern 1: Labelled URL/endpoint pattern (e.g. "Login URL: https://...", "portal URL - https://...")
         label_match = re.search(
-            r"(?:login\s*url|login_url|login\s*link|endpoint|target\s*url|accessing\s*url|link|url)\s*[:=]\s*([^\s,;\"\'<>]+)",
+            r"(?:login\s*url|login_url|login\s*link|endpoint|target\s*url|accessing\s*url|portal\s*url|ps\s*portal\s*url|cc360\s*url|portal|link|url)\s*[:=-]\s*([^\s,;\"\'<>]+)",
             text,
             re.IGNORECASE,
         )
         if label_match:
             cand = label_match.group(1).strip(".,;:)")
-            return cand if (cand.startswith("http://") or cand.startswith("https://")) else f"https://{cand}"
+            return cand if (cand.lower().startswith("http://") or cand.lower().startswith("https://")) else f"https://{cand}"
 
-        # Pattern 2: Explicit http/https URL
+        # Pattern 2: Contextual action phrases indicating attempted destination
+        action_match = re.search(
+            r"(?:bookmarked\s*url|trying to log into|trying to access|logging into|logging in at|accessing|browsing to|navigating to|connecting to)\s+(?:salesforce\s+)?(?:using\s+)?([^\s,;\"\'<>]+)",
+            text,
+            re.IGNORECASE,
+        )
+        if action_match:
+            cand = action_match.group(1).strip(".,;:)")
+            inner_url = re.search(r"https?://[^\s<>'\"\)\]]+|\b[a-zA-Z0-9_.-]+\.[a-zA-Z]{2,}(?:/[^\s<>'\"\)\]]*)?", cand)
+            if inner_url:
+                c = inner_url.group(0).rstrip(".,;:)")
+                return c if (c.lower().startswith("http://") or c.lower().startswith("https://")) else f"https://{c}"
+
+        # Pattern 3: Explicit http/https URL anywhere in narrative
         url_match = re.search(r"https?://[^\s<>'\"\)\]]+", text)
         if url_match:
             return url_match.group(0).rstrip(".,;:)")
 
-        # Pattern 3: Bare enterprise domain
-        for tok in ["bdx.my.salesforce.com", "bd2my.salesforce.com", "bd2.my.salesforce.com", "bdxga.my.salesforce.com", "bdsmx.my.salesforce.com"]:
-            if tok in text.lower():
+        # Pattern 4: Bare enterprise Salesforce / Site / Force domain
+        domain_match = re.search(
+            r"\b([a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*\.(?:salesforce\.com|force\.com|site\.com)(?:/[^\s<>'\"\)\]]*)?)",
+            text,
+            re.IGNORECASE,
+        )
+        if domain_match:
+            cand = domain_match.group(1).rstrip(".,;:)")
+            return f"https://{cand}"
+
+        # Pattern 5: Approved enterprise tokens
+        approved_tokens = [
+            "bdx.my.salesforce.com",
+            "bd2my.salesforce.com",
+            "bd2.my.salesforce.com",
+            "bdxga.my.salesforce.com",
+            "bdsmx.my.salesforce.com",
+            "bdx.my.site.com",
+            "login.salesforce.com",
+        ]
+        text_lower = text.lower()
+        for tok in approved_tokens:
+            if tok in text_lower:
+                m = re.search(re.escape(tok) + r"(?:/[^\s<>'\"\)\]]*)?", text, re.IGNORECASE)
+                if m:
+                    cand = m.group(0).rstrip(".,;:)")
+                    return f"https://{cand}"
                 return f"https://{tok}"
 
-        # Pattern 4: Any domain ending in salesforce.com or force.com
+        # Pattern 6: Any token containing salesforce.com, force.com, or site.com
         for token in text.split():
             clean = token.strip("(),;\"'<>")
-            if "salesforce.com" in clean.lower() or "force.com" in clean.lower():
-                return clean if (clean.startswith("http://") or clean.startswith("https://")) else f"https://{clean}"
+            clean_lower = clean.lower()
+            if "salesforce.com" in clean_lower or "force.com" in clean_lower or "site.com" in clean_lower:
+                return clean if (clean_lower.startswith("http://") or clean_lower.startswith("https://")) else f"https://{clean}"
         return None
 
     def _validate_salesforce_url(self, url: str) -> bool:

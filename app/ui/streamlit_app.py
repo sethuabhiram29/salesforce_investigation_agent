@@ -212,7 +212,6 @@ SAMPLE_SCENARIOS = {
         "short_description": "User cannot login - invalid portal endpoint",
         "caller_email": "jane.doe@acme.corp",
         "on_behalf_of": "",
-        "login_url": "https://old-portal.invalid.com/login",
         "description": "User jane.doe@acme.corp is trying to log into Salesforce using bookmarked URL https://old-portal.invalid.com/login instead of production org bdx.my.salesforce.com.",
     },
     "LOGIN-1B: User Found in Alternate Org (EMEA)": {
@@ -220,7 +219,6 @@ SAMPLE_SCENARIOS = {
         "short_description": "User not found in North America production org",
         "caller_email": "emma.watson@acme.corp",
         "on_behalf_of": "",
-        "login_url": "https://bdx.my.salesforce.com",
         "description": "User emma.watson@acme.corp reports login failure on main org bdx.my.salesforce.com. Check if user belongs to EMEA org bd2my.salesforce.com.",
     },
     "LOGIN-4: Jane Doe SSO Federation ID Missing": {
@@ -420,15 +418,13 @@ with st.expander("📚 **Knowledge Base Canonical SOPs (`data/sop_scenarios_sele
 
 # --- INCIDENT INPUT FORM ---
 with st.expander("📝 **ServiceNow Incident Intake Form**", expanded=True):
-    col1, col2, col3, col4 = st.columns([1.2, 1.8, 1.8, 1.8])
+    col1, col2, col3 = st.columns([1.2, 2.0, 2.0])
     with col1:
         incident_id = st.text_input("Incident ID", value=preset_data["incident_id"])
     with col2:
         caller_email = st.text_input("Caller Email", value=preset_data["caller_email"])
     with col3:
         on_behalf_of = st.text_input("On Behalf Of (Optional)", value=preset_data.get("on_behalf_of", ""))
-    with col4:
-        login_url = st.text_input("Login URL / Endpoint (Optional)", value=preset_data.get("login_url", ""), help="Enterprise login URL (e.g. bdx.my.salesforce.com, bd2my.salesforce.com, or custom endpoint)")
 
     short_description = st.text_input("Short Description / Summary", value=preset_data["short_description"])
     description = st.text_area("Full Description / Narrative", value=preset_data["description"], height=100)
@@ -443,7 +439,6 @@ if start_btn:
         "short_description": short_description.strip(),
         "caller_email": caller_email.strip(),
         "on_behalf_of": on_behalf_of.strip() if on_behalf_of else None,
-        "login_url": login_url.strip() if login_url else None,
         "description": description.strip(),
     }
 
@@ -455,7 +450,6 @@ if start_btn:
 
     initial_state = {
         "incident": ticket,
-        "login_url": login_url.strip() if login_url else None,
         "evidence": [],
         "historical_cases": [],
         "trace_events": [],
