@@ -1055,6 +1055,73 @@ class StructuredDiagnosisFlow:
             new_evidence.append(new_ev)
             return {"ContactId": contact_id, "Wizard_Country__c": wizard_country, "IsBlank": is_blank}
 
+        elif action_type == "classify_record_issue":
+            is_rep_dash = any(k in full_text for k in ["report", "dashboard"])
+            is_opp = any(k in full_text for k in ["opportunity", "case", "opp"])
+            is_rec = any(k in full_text for k in ["record", "sharing", "fls", "field not visible", "field not editable"])
+            
+            if "rec_is_report_dashboard" not in state_vars:
+                state_vars["rec_is_report_dashboard"] = is_rep_dash
+            if "rec_is_opp_case" not in state_vars:
+                state_vars["rec_is_opp_case"] = is_opp
+            if "rec_is_salesforce_record" not in state_vars:
+                state_vars["rec_is_salesforce_record"] = is_rec or bool(state_vars.get("record_id"))
+            
+            return {
+                "IsReportDashboard": state_vars["rec_is_report_dashboard"],
+                "IsOppCase": state_vars["rec_is_opp_case"],
+                "IsSalesforceRecord": state_vars["rec_is_salesforce_record"],
+            }
+
+        elif action_type == "rec_check_obj_perms_report":
+            missing = state_vars.get("rec_missing_obj_perms_report")
+            if missing is None:
+                missing = False
+                state_vars["rec_missing_obj_perms_report"] = missing
+            return {"MissingReportObjPerms": missing}
+
+        elif action_type == "rec_check_folder_access":
+            missing = state_vars.get("rec_folder_access_missing")
+            if missing is None:
+                missing = True
+                state_vars["rec_folder_access_missing"] = missing
+            return {"FolderAccessMissing": missing}
+
+        elif action_type == "rec_check_obj_perms_opp_case":
+            missing = state_vars.get("rec_missing_obj_perms_opp_case")
+            if missing is None:
+                missing = False
+                state_vars["rec_missing_obj_perms_opp_case"] = missing
+            return {"MissingOppCaseObjPerms": missing}
+
+        elif action_type == "rec_review_opp_case_sharing":
+            missing = state_vars.get("rec_opp_case_missing_sharing_path")
+            if missing is None:
+                missing = True
+                state_vars["rec_opp_case_missing_sharing_path"] = missing
+            return {"MissingOppCaseSharingPath": missing}
+
+        elif action_type == "rec_check_obj_perms_record_id":
+            missing = state_vars.get("rec_missing_obj_perms_record")
+            if missing is None:
+                missing = False
+                state_vars["rec_missing_obj_perms_record"] = missing
+            return {"MissingRecordObjPerms": missing}
+
+        elif action_type == "rec_review_sharing_path":
+            missing = state_vars.get("rec_missing_sharing_path")
+            if missing is None:
+                missing = True
+                state_vars["rec_missing_sharing_path"] = missing
+            return {"MissingRecordSharingPath": missing}
+
+        elif action_type == "rec_compare_mirror_fls":
+            fls_missing = state_vars.get("rec_is_fls_missing")
+            if fls_missing is None:
+                fls_missing = True
+                state_vars["rec_is_fls_missing"] = fls_missing
+            return {"FLSMissing": fls_missing}
+
         return {}
 
     def _evaluate_decision_condition(
@@ -1818,6 +1885,230 @@ class StructuredDiagnosisFlow:
                 "reasoning": "Identified as Field Access Issue." if val else "Not a Field Access Issue.",
             }
             return val, {"IsFieldAccessIssue": val}, cmp_info
+
+        elif condition_key == "rec_is_report_dashboard":
+            val = bool(state_vars.get("rec_is_report_dashboard"))
+            cmp_info = {
+                "decision_point": "Report/Dashboard?",
+                "rule_evaluated": "Check if incident relates to Report or Dashboard access",
+                "expected_criteria": "Report or Dashboard issue",
+                "target_value": full_text,
+                "baseline_value": "Report/Dashboard",
+                "comparison_result": "MATCH" if val else "NO_MATCH",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Incident relates to Report/Dashboard." if val else "Incident is not Report/Dashboard related.",
+            }
+            return val, {"IsReportDashboard": val}, cmp_info
+
+        elif condition_key == "rec_missing_obj_perms_report":
+            val = bool(state_vars.get("rec_missing_obj_perms_report"))
+            cmp_info = {
+                "decision_point": "Missing Object Permissions (Report/Dashboard)?",
+                "rule_evaluated": "Check if user lacks basic permissions on Report/Dashboard objects",
+                "expected_criteria": "Report/Dashboard object permissions present",
+                "target_value": str(val),
+                "baseline_value": "Object Permissions",
+                "comparison_result": "MISSING" if val else "PRESENT",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Report/Dashboard object permissions missing." if val else "Report/Dashboard object permissions are present.",
+            }
+            return val, {"MissingObjPermsReport": val}, cmp_info
+
+        elif condition_key == "rec_is_folder_info_avail":
+            val = bool(state_vars.get("rec_is_folder_info_avail", True))
+            cmp_info = {
+                "decision_point": "Is Folder Info Available?",
+                "rule_evaluated": "Check if Folder ID or folder path is present",
+                "expected_criteria": "Folder information available",
+                "target_value": str(val),
+                "baseline_value": "Folder ID",
+                "comparison_result": "AVAILABLE" if val else "MISSING",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Folder info available." if val else "Folder info not available.",
+            }
+            return val, {"FolderInfoAvailable": val}, cmp_info
+
+        elif condition_key == "rec_folder_access_missing":
+            val = bool(state_vars.get("rec_folder_access_missing", True))
+            cmp_info = {
+                "decision_point": "Folder Access Missing?",
+                "rule_evaluated": "Check if user has Viewer access to Report/Dashboard Folder",
+                "expected_criteria": "User has Viewer/Editor/Manager access to folder",
+                "target_value": str(val),
+                "baseline_value": "Folder Viewer",
+                "comparison_result": "MISSING" if val else "GRANTED",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Folder access is missing." if val else "Folder access is present.",
+            }
+            return val, {"FolderAccessMissing": val}, cmp_info
+
+        elif condition_key == "rec_is_opp_case":
+            val = bool(state_vars.get("rec_is_opp_case"))
+            cmp_info = {
+                "decision_point": "Opportunity/Case?",
+                "rule_evaluated": "Check if incident relates to Opportunity or Case record",
+                "expected_criteria": "Opportunity or Case issue",
+                "target_value": full_text,
+                "baseline_value": "Opportunity/Case",
+                "comparison_result": "MATCH" if val else "NO_MATCH",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Incident relates to Opportunity/Case." if val else "Not Opportunity/Case related.",
+            }
+            return val, {"IsOppCase": val}, cmp_info
+
+        elif condition_key == "rec_missing_obj_perms_opp_case":
+            val = bool(state_vars.get("rec_missing_obj_perms_opp_case"))
+            cmp_info = {
+                "decision_point": "Missing Object Permissions (Opp/Case)?",
+                "rule_evaluated": "Check if user lacks basic CRUD permissions on Opportunity/Case",
+                "expected_criteria": "Object permissions present",
+                "target_value": str(val),
+                "baseline_value": "Object CRUD",
+                "comparison_result": "MISSING" if val else "PRESENT",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Opportunity/Case object permissions missing." if val else "Opportunity/Case object permissions present.",
+            }
+            return val, {"MissingObjPermsOppCase": val}, cmp_info
+
+        elif condition_key == "rec_opp_case_cannot_access":
+            val = bool(state_vars.get("rec_opp_case_cannot_access", True))
+            cmp_info = {
+                "decision_point": "Cannot Access Record (Opp/Case)?",
+                "rule_evaluated": "Check if user symptom is inability to open or access record",
+                "expected_criteria": "Record inaccessible",
+                "target_value": str(val),
+                "baseline_value": "Cannot Access",
+                "comparison_result": "CANNOT_ACCESS" if val else "CAN_ACCESS",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "User cannot access record." if val else "User can access record.",
+            }
+            return val, {"OppCaseCannotAccess": val}, cmp_info
+
+        elif condition_key == "rec_opp_case_has_read_access":
+            val = bool(state_vars.get("rec_opp_case_has_read_access", False))
+            cmp_info = {
+                "decision_point": "HasReadAccess (Opp/Case)?",
+                "rule_evaluated": "Check UserRecordAccess.HasReadAccess on Opportunity/Case",
+                "expected_criteria": "HasReadAccess == False",
+                "target_value": str(val),
+                "baseline_value": "UserRecordAccess",
+                "comparison_result": "READ_ACCESS" if val else "NO_READ_ACCESS",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "User has read access." if val else "User lacks read access.",
+            }
+            return val, {"OppCaseHasReadAccess": val}, cmp_info
+
+        elif condition_key == "rec_opp_case_missing_sharing_path":
+            val = bool(state_vars.get("rec_opp_case_missing_sharing_path", True))
+            cmp_info = {
+                "decision_point": "Missing Sharing Path (Opp/Case)?",
+                "rule_evaluated": "Review Owner, OWD, Role Hierarchy, Sharing Rules, Teams",
+                "expected_criteria": "No sharing path exists",
+                "target_value": str(val),
+                "baseline_value": "Record Sharing",
+                "comparison_result": "MISSING_SHARING" if val else "SHARING_EXISTS",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Missing sharing path for Opp/Case." if val else "Sharing path exists.",
+            }
+            return val, {"OppCaseMissingSharing": val}, cmp_info
+
+        elif condition_key == "rec_is_salesforce_record":
+            val = bool(state_vars.get("rec_is_salesforce_record", True))
+            cmp_info = {
+                "decision_point": "Salesforce Record?",
+                "rule_evaluated": "Check if issue pertains to a Salesforce record",
+                "expected_criteria": "Salesforce record issue",
+                "target_value": full_text,
+                "baseline_value": "Salesforce Record",
+                "comparison_result": "RECORD_ISSUE" if val else "NOT_RECORD_ISSUE",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Issue pertains to Salesforce record." if val else "Not a Salesforce record issue.",
+            }
+            return val, {"IsSalesforceRecord": val}, cmp_info
+
+        elif condition_key == "rec_missing_obj_perms_record":
+            val = bool(state_vars.get("rec_missing_obj_perms_record"))
+            cmp_info = {
+                "decision_point": "Missing Permissions (Record Object)?",
+                "rule_evaluated": "Check object permissions using affected record ID prefix",
+                "expected_criteria": "Object permissions present",
+                "target_value": str(val),
+                "baseline_value": "Object CRUD",
+                "comparison_result": "MISSING" if val else "PRESENT",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Record object permissions missing." if val else "Record object permissions present.",
+            }
+            return val, {"MissingObjPermsRecord": val}, cmp_info
+
+        elif condition_key == "rec_cannot_access_record":
+            val = bool(state_vars.get("rec_cannot_access_record", True))
+            cmp_info = {
+                "decision_point": "Cannot Access Record?",
+                "rule_evaluated": "Check if user symptom is inability to open or view record",
+                "expected_criteria": "Record inaccessible",
+                "target_value": str(val),
+                "baseline_value": "Cannot Access",
+                "comparison_result": "CANNOT_ACCESS" if val else "CAN_ACCESS",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "User cannot access record." if val else "User can access record.",
+            }
+            return val, {"CannotAccessRecord": val}, cmp_info
+
+        elif condition_key == "rec_record_has_read_access":
+            val = bool(state_vars.get("rec_record_has_read_access", False))
+            cmp_info = {
+                "decision_point": "HasReadAccess (Record)?",
+                "rule_evaluated": "Check UserRecordAccess.HasReadAccess on target record",
+                "expected_criteria": "HasReadAccess == False",
+                "target_value": str(val),
+                "baseline_value": "UserRecordAccess",
+                "comparison_result": "READ_ACCESS" if val else "NO_READ_ACCESS",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "User has read access on record." if val else "User lacks read access on record.",
+            }
+            return val, {"RecordHasReadAccess": val}, cmp_info
+
+        elif condition_key == "rec_missing_sharing_path":
+            val = bool(state_vars.get("rec_missing_sharing_path", True))
+            cmp_info = {
+                "decision_point": "Missing Sharing Path (Record)?",
+                "rule_evaluated": "Review Owner, OWD, Role Hierarchy, Sharing Rules, Groups, Teams",
+                "expected_criteria": "No sharing path exists",
+                "target_value": str(val),
+                "baseline_value": "Record Sharing",
+                "comparison_result": "MISSING_SHARING" if val else "SHARING_EXISTS",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Missing record sharing path." if val else "Sharing path exists.",
+            }
+            return val, {"MissingRecordSharing": val}, cmp_info
+
+        elif condition_key == "rec_field_not_visible":
+            val = bool(state_vars.get("rec_field_not_visible"))
+            cmp_info = {
+                "decision_point": "Field Not Visible/Editable?",
+                "rule_evaluated": "Check if symptom is field not visible or editable on record",
+                "expected_criteria": "Field visibility/editability issue",
+                "target_value": full_text,
+                "baseline_value": "Field Visibility",
+                "comparison_result": "FIELD_ISSUE" if val else "NOT_FIELD_ISSUE",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Field not visible or editable." if val else "Field visibility not an issue.",
+            }
+            return val, {"FieldNotVisible": val}, cmp_info
+
+        elif condition_key == "rec_is_fls_missing":
+            val = bool(state_vars.get("rec_is_fls_missing", True))
+            cmp_info = {
+                "decision_point": "FLS Missing?",
+                "rule_evaluated": "Compare with mirror user and check FieldPermissions",
+                "expected_criteria": "Field-Level Security is missing",
+                "target_value": str(val),
+                "baseline_value": "FLS Permissions",
+                "comparison_result": "MISSING_FLS" if val else "FLS_PRESENT",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Field-Level Security is missing." if val else "FLS is present.",
+            }
+            return val, {"FLSMissing": val}, cmp_info
 
         cmp_info = {
             "decision_point": condition_key,

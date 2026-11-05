@@ -1,0 +1,640 @@
+{
+  "nodes": [
+    {
+      "id": "NODE_REC_CLASSIFY_ISSUE",
+      "name": "Classify the Issue Type",
+      "type": "action",
+      "swimlane": "Classify Issue",
+      "domain": "RECORD",
+      "action_type": "classify_record_issue",
+      "description": "Analyze incident description and extract Record symptoms (Report/Dashboard, Opportunity/Case, Salesforce Record, FLS)"
+    },
+    {
+      "id": "NODE_REC_IS_REPORT_DASHBOARD",
+      "name": "Report/Dashboard?",
+      "type": "decision",
+      "swimlane": "Classify Issue",
+      "domain": "RECORD",
+      "condition_key": "rec_is_report_dashboard",
+      "description": "Check if incident relates to Report or Dashboard access"
+    },
+    {
+      "id": "NODE_REC_CHECK_OBJ_PERMS_REPORT",
+      "name": "Check Object Permissions (Report/Dashboard)",
+      "type": "action",
+      "swimlane": "Missing Object Permissions",
+      "domain": "RECORD",
+      "action_type": "rec_check_obj_perms_report",
+      "description": "Inspect object permissions for Report and Dashboard objects"
+    },
+    {
+      "id": "NODE_REC_MISSING_OBJ_PERMS_REPORT",
+      "name": "Missing Object Permissions?",
+      "type": "decision",
+      "swimlane": "Missing Object Permissions",
+      "domain": "RECORD",
+      "condition_key": "rec_missing_obj_perms_report",
+      "description": "Evaluate if user lacks required Report/Dashboard object permissions"
+    },
+    {
+      "id": "TERMINAL_REC_MISSING_OBJ_PERMS_REPORT",
+      "name": "Confirmed: Missing Object Permissions",
+      "type": "terminal",
+      "swimlane": "Missing Object Permissions",
+      "domain": "RECORD",
+      "root_cause": "RECORD-OBJ-PERM-MISSING",
+      "issue_code": "RECORD-OBJ-PERM-MISSING",
+      "status": "confirmed",
+      "skill_file": "app/skills/issues/RECORD-OBJ-PERM-missing.md",
+      "description": "User lacks required Object permissions on Report or Dashboard"
+    },
+    {
+      "id": "NODE_REC_IS_FOLDER_INFO_AVAIL",
+      "name": "Is Folder Info Available?",
+      "type": "decision",
+      "swimlane": "Folder Access Missing",
+      "domain": "RECORD",
+      "condition_key": "rec_is_folder_info_avail",
+      "description": "Check if Folder ID or folder path is identified in the incident narrative"
+    },
+    {
+      "id": "TERMINAL_REC_MANUAL_REVIEW_FOLDER_INFO",
+      "name": "Manual Review",
+      "type": "terminal",
+      "swimlane": "Folder Access Missing",
+      "domain": "RECORD",
+      "review_required": true,
+      "status": "escalation_required",
+      "description": "Folder information not available in incident description. Route for manual review."
+    },
+    {
+      "id": "NODE_REC_CHECK_FOLDER_ACCESS",
+      "name": "Check Folder Access (User/Public Groups/Roles)",
+      "type": "action",
+      "swimlane": "Folder Access Missing",
+      "domain": "RECORD",
+      "action_type": "rec_check_folder_access",
+      "description": "Check whether user, public groups, or roles have access to the report/dashboard folder"
+    },
+    {
+      "id": "NODE_REC_FOLDER_ACCESS_MISSING",
+      "name": "Folder Access Missing?",
+      "type": "decision",
+      "swimlane": "Folder Access Missing",
+      "domain": "RECORD",
+      "condition_key": "rec_folder_access_missing",
+      "description": "Evaluate if user lacks Viewer, Editor, or Manager access to the Folder"
+    },
+    {
+      "id": "TERMINAL_REC_FOLDER_ACCESS_MISSING",
+      "name": "Confirmed: Folder Access Missing",
+      "type": "terminal",
+      "swimlane": "Folder Access Missing",
+      "domain": "RECORD",
+      "root_cause": "RECORD-1",
+      "issue_code": "RECORD-1",
+      "status": "confirmed",
+      "skill_file": "app/skills/issues/RECORD-1-report-folder-access.md",
+      "description": "Confirmed root cause: User lacks folder access to the target Report/Dashboard folder"
+    },
+    {
+      "id": "TERMINAL_REC_MANUAL_REVIEW_FOLDER",
+      "name": "Manual Review",
+      "type": "terminal",
+      "swimlane": "Folder Access Missing",
+      "domain": "RECORD",
+      "review_required": true,
+      "status": "escalation_required",
+      "description": "Folder access is granted but user still reports issue. Route for manual review."
+    },
+    {
+      "id": "NODE_REC_IS_OPP_CASE",
+      "name": "Opportunity/Case?",
+      "type": "decision",
+      "swimlane": "Classify Issue",
+      "domain": "RECORD",
+      "condition_key": "rec_is_opp_case",
+      "description": "Check if incident relates to Opportunity or Case record access"
+    },
+    {
+      "id": "NODE_REC_CHECK_OBJ_PERMS_OPP_CASE",
+      "name": "Check Object Permissions (Opp/Case)",
+      "type": "action",
+      "swimlane": "Missing Object Permissions (Opp/Case)",
+      "domain": "RECORD",
+      "action_type": "rec_check_obj_perms_opp_case",
+      "description": "Inspect user profile and permission sets for Opportunity and Case object permissions"
+    },
+    {
+      "id": "NODE_REC_MISSING_OBJ_PERMS_OPP_CASE",
+      "name": "Missing Object Permissions?",
+      "type": "decision",
+      "swimlane": "Missing Object Permissions (Opp/Case)",
+      "domain": "RECORD",
+      "condition_key": "rec_missing_obj_perms_opp_case",
+      "description": "Evaluate if user lacks required Opportunity or Case object permissions"
+    },
+    {
+      "id": "TERMINAL_REC_MISSING_OBJ_PERMS_OPP_CASE",
+      "name": "Confirmed: Missing Object Permissions",
+      "type": "terminal",
+      "swimlane": "Missing Object Permissions (Opp/Case)",
+      "domain": "RECORD",
+      "root_cause": "RECORD-OBJ-PERM-MISSING",
+      "issue_code": "RECORD-OBJ-PERM-MISSING",
+      "status": "confirmed",
+      "skill_file": "app/skills/issues/RECORD-OBJ-PERM-missing.md",
+      "description": "Confirmed root cause: User lacks object-level Read or Create permissions for Opportunity or Case"
+    },
+    {
+      "id": "NODE_REC_OPP_CASE_CANNOT_ACCESS",
+      "name": "Cannot Access Record?",
+      "type": "decision",
+      "swimlane": "Missing Record Sharing (Opp/Case)",
+      "domain": "RECORD",
+      "condition_key": "rec_opp_case_cannot_access",
+      "description": "Check if user symptom is inability to access/open the specific Opportunity or Case record"
+    },
+    {
+      "id": "TERMINAL_REC_MANUAL_REVIEW_OPP_CASE_ACCESS",
+      "name": "Manual Review",
+      "type": "terminal",
+      "swimlane": "Missing Record Sharing (Opp/Case)",
+      "domain": "RECORD",
+      "review_required": true,
+      "status": "escalation_required",
+      "description": "Opportunity/Case record is accessible. Route for manual review."
+    },
+    {
+      "id": "NODE_REC_OPP_CASE_HAS_READ_ACCESS",
+      "name": "HasReadAccess?",
+      "type": "decision",
+      "swimlane": "Missing Record Sharing (Opp/Case)",
+      "domain": "RECORD",
+      "condition_key": "rec_opp_case_has_read_access",
+      "description": "Check UserRecordAccess.HasReadAccess for the Opportunity or Case record"
+    },
+    {
+      "id": "TERMINAL_REC_MANUAL_REVIEW_OPP_CASE_HAS_READ",
+      "name": "Manual Review",
+      "type": "terminal",
+      "swimlane": "Missing Record Sharing (Opp/Case)",
+      "domain": "RECORD",
+      "review_required": true,
+      "status": "escalation_required",
+      "description": "User already has read access on Opportunity/Case record. Route for manual review."
+    },
+    {
+      "id": "NODE_REC_OPP_CASE_REVIEW_SHARING",
+      "name": "Review Owner, OWD, Role Hierarchy, Sharing Rules, Groups, Teams, Queues, Territories and Manual Sharing",
+      "type": "action",
+      "swimlane": "Missing Record Sharing (Opp/Case)",
+      "domain": "RECORD",
+      "action_type": "rec_review_opp_case_sharing",
+      "description": "Audit full record sharing hierarchy for the Opportunity or Case record"
+    },
+    {
+      "id": "NODE_REC_OPP_CASE_MISSING_SHARING_PATH",
+      "name": "Missing Sharing Path?",
+      "type": "decision",
+      "swimlane": "Missing Record Sharing (Opp/Case)",
+      "domain": "RECORD",
+      "condition_key": "rec_opp_case_missing_sharing_path",
+      "description": "Confirm whether user has no active sharing path to the Opportunity or Case"
+    },
+    {
+      "id": "TERMINAL_REC_OPP_CASE_SHARING_MISSING",
+      "name": "Confirmed: Missing Record Sharing",
+      "type": "terminal",
+      "swimlane": "Missing Record Sharing (Opp/Case)",
+      "domain": "RECORD",
+      "root_cause": "RECORD-2",
+      "issue_code": "RECORD-2",
+      "status": "confirmed",
+      "skill_file": "app/skills/issues/RECORD-2-opp-case-sharing.md",
+      "description": "Confirmed root cause: User lacks record sharing for Opportunity or Case record"
+    },
+    {
+      "id": "TERMINAL_REC_MANUAL_REVIEW_OPP_CASE_SHARING",
+      "name": "Manual Review",
+      "type": "terminal",
+      "swimlane": "Missing Record Sharing (Opp/Case)",
+      "domain": "RECORD",
+      "review_required": true,
+      "status": "escalation_required",
+      "description": "Sharing path exists but user unable to access Opportunity/Case. Route for manual review."
+    },
+    {
+      "id": "NODE_REC_IS_SALESFORCE_RECORD",
+      "name": "Salesforce Record?",
+      "type": "decision",
+      "swimlane": "Salesforce Object Permissions",
+      "domain": "RECORD",
+      "condition_key": "rec_is_salesforce_record",
+      "description": "Check if incident pertains to a Salesforce object record"
+    },
+    {
+      "id": "TERMINAL_REC_OUT_OF_SCOPE",
+      "name": "Out Of Scope",
+      "type": "terminal",
+      "swimlane": "Out Of scope",
+      "domain": "RECORD",
+      "root_cause": "OUT-OF-SCOPE",
+      "issue_code": "OUT-OF-SCOPE",
+      "status": "escalation_required",
+      "skill_file": "app/skills/issues/OUT-OF-SCOPE-resolver.md",
+      "description": "Incident narrative does not relate to a Salesforce Record. Out of scope."
+    },
+    {
+      "id": "NODE_REC_CHECK_OBJ_PERMS_RECORD_ID",
+      "name": "Check Required Object Permissions using Affected Record ID",
+      "type": "action",
+      "swimlane": "Salesforce Object Permissions",
+      "domain": "RECORD",
+      "action_type": "rec_check_obj_perms_record_id",
+      "description": "Identify object from record ID and verify user's object-level permissions"
+    },
+    {
+      "id": "NODE_REC_MISSING_OBJ_PERMS_RECORD",
+      "name": "Missing Permissions?",
+      "type": "decision",
+      "swimlane": "Salesforce Object Permissions",
+      "domain": "RECORD",
+      "condition_key": "rec_missing_obj_perms_record",
+      "description": "Evaluate if user lacks required Object CRUD permissions"
+    },
+    {
+      "id": "TERMINAL_REC_MISSING_OBJ_PERMS_RECORD",
+      "name": "Confirmed: Missing Object Permissions",
+      "type": "terminal",
+      "swimlane": "Salesforce Object Permissions",
+      "domain": "RECORD",
+      "root_cause": "RECORD-OBJ-PERM-MISSING",
+      "issue_code": "RECORD-OBJ-PERM-MISSING",
+      "status": "confirmed",
+      "skill_file": "app/skills/issues/RECORD-OBJ-PERM-missing.md",
+      "description": "Confirmed root cause: User lacks object-level Read or Create permissions for the target record type"
+    },
+    {
+      "id": "NODE_REC_CANNOT_ACCESS_RECORD",
+      "name": "Cannot Access Record?",
+      "type": "decision",
+      "swimlane": "Missing Record Sharing",
+      "domain": "RECORD",
+      "condition_key": "rec_cannot_access_record",
+      "description": "Check if user symptom is inability to access/open the record"
+    },
+    {
+      "id": "NODE_REC_RECORD_HAS_READ_ACCESS",
+      "name": "HasReadAccess?",
+      "type": "decision",
+      "swimlane": "Missing Record Sharing",
+      "domain": "RECORD",
+      "condition_key": "rec_record_has_read_access",
+      "description": "Check UserRecordAccess.HasReadAccess for the target record"
+    },
+    {
+      "id": "TERMINAL_REC_MANUAL_REVIEW_RECORD_HAS_READ",
+      "name": "Manual Review",
+      "type": "terminal",
+      "swimlane": "Missing Record Sharing",
+      "domain": "RECORD",
+      "review_required": true,
+      "status": "escalation_required",
+      "description": "User already has read access on record. Route for manual review."
+    },
+    {
+      "id": "NODE_REC_REVIEW_SHARING_PATH",
+      "name": "Review Owner, OWD, Role Hierarchy, Sharing Rules, Groups, Teams, Queues, Territories and Manual Sharing",
+      "type": "action",
+      "swimlane": "Missing Record Sharing",
+      "domain": "RECORD",
+      "action_type": "rec_review_sharing_path",
+      "description": "Perform full sharing audit across OWD, Role Hierarchy, Sharing Rules, Public Groups, and Teams"
+    },
+    {
+      "id": "NODE_REC_MISSING_SHARING_PATH",
+      "name": "Missing Sharing Path?",
+      "type": "decision",
+      "swimlane": "Missing Record Sharing",
+      "domain": "RECORD",
+      "condition_key": "rec_missing_sharing_path",
+      "description": "Confirm if no active sharing path grants user access to this record"
+    },
+    {
+      "id": "TERMINAL_REC_SHARING_MISSING",
+      "name": "Confirmed: Missing Record Sharing",
+      "type": "terminal",
+      "swimlane": "Missing Record Sharing",
+      "domain": "RECORD",
+      "root_cause": "RECORD-3",
+      "issue_code": "RECORD-3",
+      "status": "confirmed",
+      "skill_file": "app/skills/issues/RECORD-3-general-record-sharing.md",
+      "description": "Confirmed root cause: Missing record sharing (OWD is Private and no sharing rules or team assignment grant access)"
+    },
+    {
+      "id": "TERMINAL_REC_MANUAL_REVIEW_SHARING",
+      "name": "Manual Review",
+      "type": "terminal",
+      "swimlane": "Missing Record Sharing",
+      "domain": "RECORD",
+      "review_required": true,
+      "status": "escalation_required",
+      "description": "Sharing path exists for record. Route for manual review."
+    },
+    {
+      "id": "NODE_REC_FIELD_NOT_VISIBLE",
+      "name": "Field Not Visible/Editable?",
+      "type": "decision",
+      "swimlane": "Missing FLS",
+      "domain": "RECORD",
+      "condition_key": "rec_field_not_visible",
+      "description": "Check if user can open record but reports a field is not visible or not editable"
+    },
+    {
+      "id": "TERMINAL_REC_MANUAL_REVIEW_FIELD_VISIBLE",
+      "name": "Manual Review",
+      "type": "terminal",
+      "swimlane": "Missing FLS",
+      "domain": "RECORD",
+      "review_required": true,
+      "status": "escalation_required",
+      "description": "Field visibility/editability issue not confirmed. Route for manual review."
+    },
+    {
+      "id": "NODE_REC_COMPARE_MIRROR_FLS",
+      "name": "Compare Mirror user and Review Field Permissions",
+      "type": "action",
+      "swimlane": "Missing FLS",
+      "domain": "RECORD",
+      "action_type": "rec_compare_mirror_fls",
+      "description": "Compare field permissions between affected user and baseline mirror user"
+    },
+    {
+      "id": "NODE_REC_IS_FLS_MISSING",
+      "name": "FLS Missing?",
+      "type": "decision",
+      "swimlane": "Missing FLS",
+      "domain": "RECORD",
+      "condition_key": "rec_is_fls_missing",
+      "description": "Evaluate if Field-Level Security permission is missing on user Profile or Permission Sets"
+    },
+    {
+      "id": "TERMINAL_REC_FLS_MISSING",
+      "name": "Confirmed: Missing FLS",
+      "type": "terminal",
+      "swimlane": "Missing FLS",
+      "domain": "RECORD",
+      "root_cause": "RECORD-4",
+      "issue_code": "RECORD-4",
+      "status": "confirmed",
+      "skill_file": "app/skills/issues/RECORD-4-missing-fls.md",
+      "description": "Confirmed root cause: Missing Field-Level Security (FLS) permissions on target field"
+    },
+    {
+      "id": "TERMINAL_REC_MANUAL_REVIEW_FLS",
+      "name": "Manual Review",
+      "type": "terminal",
+      "swimlane": "Missing FLS",
+      "domain": "RECORD",
+      "review_required": true,
+      "status": "escalation_required",
+      "description": "FLS is present for user. Route for manual review."
+    }
+  ],
+  "edges": [
+    {
+      "from": "NODE_REC_CLASSIFY_ISSUE",
+      "to": "NODE_REC_IS_REPORT_DASHBOARD",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_REC_IS_REPORT_DASHBOARD",
+      "to": "NODE_REC_CHECK_OBJ_PERMS_REPORT",
+      "type": "ON_YES",
+      "condition": "rec_is_report_dashboard == True"
+    },
+    {
+      "from": "NODE_REC_IS_REPORT_DASHBOARD",
+      "to": "NODE_REC_IS_OPP_CASE",
+      "type": "ON_NO",
+      "condition": "rec_is_report_dashboard == False"
+    },
+    {
+      "from": "NODE_REC_CHECK_OBJ_PERMS_REPORT",
+      "to": "NODE_REC_MISSING_OBJ_PERMS_REPORT",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_REC_MISSING_OBJ_PERMS_REPORT",
+      "to": "TERMINAL_REC_MISSING_OBJ_PERMS_REPORT",
+      "type": "ON_YES",
+      "condition": "rec_missing_obj_perms_report == True"
+    },
+    {
+      "from": "NODE_REC_MISSING_OBJ_PERMS_REPORT",
+      "to": "NODE_REC_IS_FOLDER_INFO_AVAIL",
+      "type": "ON_NO",
+      "condition": "rec_missing_obj_perms_report == False"
+    },
+    {
+      "from": "NODE_REC_IS_FOLDER_INFO_AVAIL",
+      "to": "NODE_REC_CHECK_FOLDER_ACCESS",
+      "type": "ON_YES",
+      "condition": "rec_is_folder_info_avail == True"
+    },
+    {
+      "from": "NODE_REC_IS_FOLDER_INFO_AVAIL",
+      "to": "TERMINAL_REC_MANUAL_REVIEW_FOLDER_INFO",
+      "type": "ON_NO",
+      "condition": "rec_is_folder_info_avail == False"
+    },
+    {
+      "from": "NODE_REC_CHECK_FOLDER_ACCESS",
+      "to": "NODE_REC_FOLDER_ACCESS_MISSING",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_REC_FOLDER_ACCESS_MISSING",
+      "to": "TERMINAL_REC_FOLDER_ACCESS_MISSING",
+      "type": "ON_YES",
+      "condition": "rec_folder_access_missing == True"
+    },
+    {
+      "from": "NODE_REC_FOLDER_ACCESS_MISSING",
+      "to": "TERMINAL_REC_MANUAL_REVIEW_FOLDER",
+      "type": "ON_NO",
+      "condition": "rec_folder_access_missing == False"
+    },
+    {
+      "from": "NODE_REC_IS_OPP_CASE",
+      "to": "NODE_REC_CHECK_OBJ_PERMS_OPP_CASE",
+      "type": "ON_YES",
+      "condition": "rec_is_opp_case == True"
+    },
+    {
+      "from": "NODE_REC_IS_OPP_CASE",
+      "to": "NODE_REC_IS_SALESFORCE_RECORD",
+      "type": "ON_NO",
+      "condition": "rec_is_opp_case == False"
+    },
+    {
+      "from": "NODE_REC_CHECK_OBJ_PERMS_OPP_CASE",
+      "to": "NODE_REC_MISSING_OBJ_PERMS_OPP_CASE",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_REC_MISSING_OBJ_PERMS_OPP_CASE",
+      "to": "TERMINAL_REC_MISSING_OBJ_PERMS_OPP_CASE",
+      "type": "ON_YES",
+      "condition": "rec_missing_obj_perms_opp_case == True"
+    },
+    {
+      "from": "NODE_REC_MISSING_OBJ_PERMS_OPP_CASE",
+      "to": "NODE_REC_OPP_CASE_CANNOT_ACCESS",
+      "type": "ON_NO",
+      "condition": "rec_missing_obj_perms_opp_case == False"
+    },
+    {
+      "from": "NODE_REC_OPP_CASE_CANNOT_ACCESS",
+      "to": "NODE_REC_OPP_CASE_HAS_READ_ACCESS",
+      "type": "ON_YES",
+      "condition": "rec_opp_case_cannot_access == True"
+    },
+    {
+      "from": "NODE_REC_OPP_CASE_CANNOT_ACCESS",
+      "to": "TERMINAL_REC_MANUAL_REVIEW_OPP_CASE_ACCESS",
+      "type": "ON_NO",
+      "condition": "rec_opp_case_cannot_access == False"
+    },
+    {
+      "from": "NODE_REC_OPP_CASE_HAS_READ_ACCESS",
+      "to": "TERMINAL_REC_MANUAL_REVIEW_OPP_CASE_HAS_READ",
+      "type": "ON_YES",
+      "condition": "rec_opp_case_has_read_access == True"
+    },
+    {
+      "from": "NODE_REC_OPP_CASE_HAS_READ_ACCESS",
+      "to": "NODE_REC_OPP_CASE_REVIEW_SHARING",
+      "type": "ON_NO",
+      "condition": "rec_opp_case_has_read_access == False"
+    },
+    {
+      "from": "NODE_REC_OPP_CASE_REVIEW_SHARING",
+      "to": "NODE_REC_OPP_CASE_MISSING_SHARING_PATH",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_REC_OPP_CASE_MISSING_SHARING_PATH",
+      "to": "TERMINAL_REC_OPP_CASE_SHARING_MISSING",
+      "type": "ON_YES",
+      "condition": "rec_opp_case_missing_sharing_path == True"
+    },
+    {
+      "from": "NODE_REC_OPP_CASE_MISSING_SHARING_PATH",
+      "to": "TERMINAL_REC_MANUAL_REVIEW_OPP_CASE_SHARING",
+      "type": "ON_NO",
+      "condition": "rec_opp_case_missing_sharing_path == False"
+    },
+    {
+      "from": "NODE_REC_IS_SALESFORCE_RECORD",
+      "to": "NODE_REC_CHECK_OBJ_PERMS_RECORD_ID",
+      "type": "ON_YES",
+      "condition": "rec_is_salesforce_record == True"
+    },
+    {
+      "from": "NODE_REC_IS_SALESFORCE_RECORD",
+      "to": "TERMINAL_REC_OUT_OF_SCOPE",
+      "type": "ON_NO",
+      "condition": "rec_is_salesforce_record == False"
+    },
+    {
+      "from": "NODE_REC_CHECK_OBJ_PERMS_RECORD_ID",
+      "to": "NODE_REC_MISSING_OBJ_PERMS_RECORD",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_REC_MISSING_OBJ_PERMS_RECORD",
+      "to": "TERMINAL_REC_MISSING_OBJ_PERMS_RECORD",
+      "type": "ON_YES",
+      "condition": "rec_missing_obj_perms_record == True"
+    },
+    {
+      "from": "NODE_REC_MISSING_OBJ_PERMS_RECORD",
+      "to": "NODE_REC_CANNOT_ACCESS_RECORD",
+      "type": "ON_NO",
+      "condition": "rec_missing_obj_perms_record == False"
+    },
+    {
+      "from": "NODE_REC_CANNOT_ACCESS_RECORD",
+      "to": "NODE_REC_RECORD_HAS_READ_ACCESS",
+      "type": "ON_YES",
+      "condition": "rec_cannot_access_record == True"
+    },
+    {
+      "from": "NODE_REC_CANNOT_ACCESS_RECORD",
+      "to": "NODE_REC_FIELD_NOT_VISIBLE",
+      "type": "ON_NO",
+      "condition": "rec_cannot_access_record == False"
+    },
+    {
+      "from": "NODE_REC_RECORD_HAS_READ_ACCESS",
+      "to": "TERMINAL_REC_MANUAL_REVIEW_RECORD_HAS_READ",
+      "type": "ON_YES",
+      "condition": "rec_record_has_read_access == True"
+    },
+    {
+      "from": "NODE_REC_RECORD_HAS_READ_ACCESS",
+      "to": "NODE_REC_REVIEW_SHARING_PATH",
+      "type": "ON_NO",
+      "condition": "rec_record_has_read_access == False"
+    },
+    {
+      "from": "NODE_REC_REVIEW_SHARING_PATH",
+      "to": "NODE_REC_MISSING_SHARING_PATH",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_REC_MISSING_SHARING_PATH",
+      "to": "TERMINAL_REC_SHARING_MISSING",
+      "type": "ON_YES",
+      "condition": "rec_missing_sharing_path == True"
+    },
+    {
+      "from": "NODE_REC_MISSING_SHARING_PATH",
+      "to": "TERMINAL_REC_MANUAL_REVIEW_SHARING",
+      "type": "ON_NO",
+      "condition": "rec_missing_sharing_path == False"
+    },
+    {
+      "from": "NODE_REC_FIELD_NOT_VISIBLE",
+      "to": "NODE_REC_COMPARE_MIRROR_FLS",
+      "type": "ON_YES",
+      "condition": "rec_field_not_visible == True"
+    },
+    {
+      "from": "NODE_REC_FIELD_NOT_VISIBLE",
+      "to": "TERMINAL_REC_MANUAL_REVIEW_FIELD_VISIBLE",
+      "type": "ON_NO",
+      "condition": "rec_field_not_visible == False"
+    },
+    {
+      "from": "NODE_REC_COMPARE_MIRROR_FLS",
+      "to": "NODE_REC_IS_FLS_MISSING",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_REC_IS_FLS_MISSING",
+      "to": "TERMINAL_REC_FLS_MISSING",
+      "type": "ON_YES",
+      "condition": "rec_is_fls_missing == True"
+    },
+    {
+      "from": "NODE_REC_IS_FLS_MISSING",
+      "to": "TERMINAL_REC_MANUAL_REVIEW_FLS",
+      "type": "ON_NO",
+      "condition": "rec_is_fls_missing == False"
+    }
+  ]
+}
