@@ -1,0 +1,221 @@
+{
+  "nodes": [
+    {
+      "id": "NODE_OBJ_CLASSIFY_ISSUE_TYPE",
+      "label": "Classify the Issue Type",
+      "type": "action",
+      "swimlane": "Classify the issue",
+      "domain": "OBJECT",
+      "action_name": "classify_object_issue",
+      "description": "Analyze incident description and extract Object symptoms (Wizard App/Product Search, Object Access, Field Access)",
+      "action_type": "classify_object_issue",
+      "name": "Classify the Issue Type"
+    },
+    {
+      "id": "NODE_OBJ_HAS_WIZARD_SYMPTOM",
+      "label": "Has Description contained 'Wizard App or Product Search Issue' Symptom?",
+      "type": "decision",
+      "swimlane": "Classify the issue",
+      "domain": "OBJECT",
+      "condition_key": "has_wizard_symptom",
+      "description": "Check if incident mentions Wizard App or Product Search",
+      "name": "Has Description contained 'Wizard App or Product Search Issue' Symptom?"
+    },
+    {
+      "id": "NODE_OBJ_RETRIEVE_CONTACT",
+      "label": "Retrieve Contact Record",
+      "type": "action",
+      "swimlane": "Blank Wizard_Country__c field",
+      "domain": "OBJECT",
+      "action_name": "retrieve_contact_wizard_details",
+      "description": "Query Contact record linked to the affected user and check Wizard_Country__c",
+      "action_type": "retrieve_contact_wizard_details",
+      "name": "Retrieve Contact Record"
+    },
+    {
+      "id": "NODE_OBJ_IS_WIZARD_COUNTRY_BLANK",
+      "label": "Is Wizard_Country__c Blank?",
+      "type": "decision",
+      "swimlane": "Blank Wizard_Country__c field",
+      "domain": "OBJECT",
+      "condition_key": "is_wizard_country_blank",
+      "description": "Evaluate if the Wizard_Country__c field on Contact is null or empty",
+      "name": "Is Wizard_Country__c Blank?"
+    },
+    {
+      "id": "TERMINAL_OBJ_WIZARD_COUNTRY_BLANK",
+      "label": "Confirmed: Wizard_Country__c is blank",
+      "type": "terminal",
+      "swimlane": "Blank Wizard_Country__c field",
+      "domain": "OBJECT",
+      "root_cause": "OBJECT-1",
+      "issue_code": "OBJECT-1",
+      "skill_file": "app/skills/issues/OBJECT-1-wizard-country-blank.md",
+      "description": "Confirmed root cause: Contact Wizard_Country__c field is missing/blank, blocking Wizard App and Product Search",
+      "name": "Confirmed: Wizard_Country__c is blank",
+      "status": "confirmed",
+      "expected_criteria": "Confirmed root cause: Contact Wizard_Country__c field is missing/blank, blocking Wizard App and Product Search",
+      "decision_basis": "Confirmed root cause: Contact Wizard_Country__c field is missing/blank, blocking Wizard App and Product Search"
+    },
+    {
+      "id": "NODE_OBJ_HAS_OBJECT_OR_FIELD_SYMPTOM",
+      "label": "Has Description contained 'Object or Field Access Issue' Symptom?",
+      "type": "decision",
+      "swimlane": "Classify the issue",
+      "domain": "OBJECT",
+      "condition_key": "has_object_or_field_symptom",
+      "description": "Check if incident mentions Object Access or Field Access symptoms",
+      "name": "Has Description contained 'Object or Field Access Issue' Symptom?"
+    },
+    {
+      "id": "NODE_OBJ_IS_OBJECT_ACCESS_ISSUE",
+      "label": "Is Object Access Issue?",
+      "type": "decision",
+      "swimlane": "Object Access Issue",
+      "domain": "OBJECT",
+      "condition_key": "is_object_access_issue",
+      "description": "Evaluate if the issue pertains to Object-level CRUD permissions",
+      "name": "Is Object Access Issue?"
+    },
+    {
+      "id": "TERMINAL_OBJ_OBJECT_ACCESS_ISSUE",
+      "label": "Confirmed: Object Access Issue",
+      "type": "terminal",
+      "swimlane": "Object Access Issue",
+      "domain": "OBJECT",
+      "root_cause": "OBJECT-2",
+      "issue_code": "OBJECT-2",
+      "skill_file": "app/skills/issues/OBJECT-2-object-access-issue.md",
+      "description": "Confirmed root cause: User lacks required Object CRUD permissions on profile or permission sets",
+      "name": "Confirmed: Object Access Issue",
+      "status": "confirmed",
+      "expected_criteria": "Confirmed root cause: User lacks required Object CRUD permissions on profile or permission sets",
+      "decision_basis": "Confirmed root cause: User lacks required Object CRUD permissions on profile or permission sets"
+    },
+    {
+      "id": "NODE_OBJ_IS_FIELD_ACCESS_ISSUE",
+      "label": "Is Field Access Issue?",
+      "type": "decision",
+      "swimlane": "Field Access Issue",
+      "domain": "OBJECT",
+      "condition_key": "is_field_access_issue",
+      "description": "Evaluate if the issue pertains to Field-Level Security (FLS) permissions",
+      "name": "Is Field Access Issue?"
+    },
+    {
+      "id": "TERMINAL_OBJ_FIELD_ACCESS_ISSUE",
+      "label": "Confirmed: Field Access Issue",
+      "type": "terminal",
+      "swimlane": "Field Access Issue",
+      "domain": "OBJECT",
+      "root_cause": "OBJECT-3",
+      "issue_code": "OBJECT-3",
+      "skill_file": "app/skills/issues/OBJECT-3-field-access-issue.md",
+      "description": "Confirmed root cause: User lacks required Field-Level Security (FLS) permissions",
+      "name": "Confirmed: Field Access Issue",
+      "status": "confirmed",
+      "expected_criteria": "Confirmed root cause: User lacks required Field-Level Security (FLS) permissions",
+      "decision_basis": "Confirmed root cause: User lacks required Field-Level Security (FLS) permissions"
+    },
+    {
+      "id": "TERMINAL_OBJ_MANUAL_REVIEW",
+      "label": "Manual Review",
+      "type": "terminal",
+      "swimlane": "Out Of scope",
+      "domain": "OBJECT",
+      "review_required": true,
+      "description": "Object issue investigation inconclusive. Route for L2 manual review.",
+      "name": "Manual Review",
+      "status": "escalation_required",
+      "expected_criteria": "Object issue investigation inconclusive. Route for L2 manual review.",
+      "decision_basis": "Object issue investigation inconclusive. Route for L2 manual review."
+    },
+    {
+      "id": "TERMINAL_OBJ_OUT_OF_SCOPE",
+      "label": "Out Of Scope",
+      "type": "terminal",
+      "swimlane": "Out Of scope",
+      "domain": "OBJECT",
+      "root_cause": "OUT-OF-SCOPE",
+      "issue_code": "OUT-OF-SCOPE",
+      "skill_file": "app/skills/issues/OUT-OF-SCOPE-resolver.md",
+      "description": "Incident symptoms do not match Object domain criteria. Escalate or reclassify.",
+      "name": "Out Of Scope",
+      "status": "escalation_required",
+      "expected_criteria": "Incident symptoms do not match Object domain criteria. Escalate or reclassify.",
+      "decision_basis": "Incident symptoms do not match Object domain criteria. Escalate or reclassify."
+    }
+  ],
+  "edges": [
+    {
+      "from": "NODE_OBJ_CLASSIFY_ISSUE_TYPE",
+      "to": "NODE_OBJ_HAS_WIZARD_SYMPTOM",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_OBJ_HAS_WIZARD_SYMPTOM",
+      "to": "NODE_OBJ_RETRIEVE_CONTACT",
+      "type": "ON_YES",
+      "condition": "has_wizard_symptom == True"
+    },
+    {
+      "from": "NODE_OBJ_HAS_WIZARD_SYMPTOM",
+      "to": "NODE_OBJ_HAS_OBJECT_OR_FIELD_SYMPTOM",
+      "type": "ON_NO",
+      "condition": "has_wizard_symptom == False"
+    },
+    {
+      "from": "NODE_OBJ_RETRIEVE_CONTACT",
+      "to": "NODE_OBJ_IS_WIZARD_COUNTRY_BLANK",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_OBJ_IS_WIZARD_COUNTRY_BLANK",
+      "to": "TERMINAL_OBJ_WIZARD_COUNTRY_BLANK",
+      "type": "ON_YES",
+      "condition": "is_wizard_country_blank == True"
+    },
+    {
+      "from": "NODE_OBJ_IS_WIZARD_COUNTRY_BLANK",
+      "to": "TERMINAL_OBJ_MANUAL_REVIEW",
+      "type": "ON_NO",
+      "condition": "is_wizard_country_blank == False"
+    },
+    {
+      "from": "NODE_OBJ_HAS_OBJECT_OR_FIELD_SYMPTOM",
+      "to": "NODE_OBJ_IS_OBJECT_ACCESS_ISSUE",
+      "type": "ON_YES",
+      "condition": "has_object_or_field_symptom == True"
+    },
+    {
+      "from": "NODE_OBJ_HAS_OBJECT_OR_FIELD_SYMPTOM",
+      "to": "TERMINAL_OBJ_OUT_OF_SCOPE",
+      "type": "ON_NO",
+      "condition": "has_object_or_field_symptom == False"
+    },
+    {
+      "from": "NODE_OBJ_IS_OBJECT_ACCESS_ISSUE",
+      "to": "TERMINAL_OBJ_OBJECT_ACCESS_ISSUE",
+      "type": "ON_YES",
+      "condition": "is_object_access_issue == True"
+    },
+    {
+      "from": "NODE_OBJ_IS_OBJECT_ACCESS_ISSUE",
+      "to": "NODE_OBJ_IS_FIELD_ACCESS_ISSUE",
+      "type": "ON_NO",
+      "condition": "is_object_access_issue == False"
+    },
+    {
+      "from": "NODE_OBJ_IS_FIELD_ACCESS_ISSUE",
+      "to": "TERMINAL_OBJ_FIELD_ACCESS_ISSUE",
+      "type": "ON_YES",
+      "condition": "is_field_access_issue == True"
+    },
+    {
+      "from": "NODE_OBJ_IS_FIELD_ACCESS_ISSUE",
+      "to": "TERMINAL_OBJ_MANUAL_REVIEW",
+      "type": "ON_NO",
+      "condition": "is_field_access_issue == False"
+    }
+  ]
+}

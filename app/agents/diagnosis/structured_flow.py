@@ -283,6 +283,11 @@ class StructuredDiagnosisFlow:
             "ev_url_id": None,
         }
 
+        if isinstance(ctx, dict):
+            for k, v in ctx.items():
+                if k not in state_vars or state_vars[k] is None or state_vars[k] is False:
+                    state_vars[k] = v
+
         # Check existing evidence
         for ev in recorded_evidence:
             if ev.get("tool_name") in ["salesforce_user_search", "salesforce_get_basic_user"]:
@@ -299,14 +304,19 @@ class StructuredDiagnosisFlow:
             step_count += 1
             node_id = current_node.get("id")
             node_name = current_node.get("name", node_id)
-            node_type = current_node.get("node_type") or current_node.get("type", "decision")
+            node_type = str(current_node.get("node_type") or current_node.get("type", "decision")).lower()
             swimlane = current_node.get("swimlane", "General")
             node_source = current_node.get("source", graph_source)
 
             # Check if Terminal Node reached in Knowledge Graph
             if node_type == "terminal":
                 issue_code = current_node.get("issue_code", "UNKNOWN")
-                status = current_node.get("status", "confirmed")
+                status = current_node.get("status")
+                if not status:
+                    if current_node.get("review_required") or current_node.get("issue_code") in ["UNKNOWN", "OUT-OF-SCOPE", "MANUAL-REVIEW"]:
+                        status = "escalation_required"
+                    else:
+                        status = "confirmed" 
                 decision_basis = current_node.get("decision_basis", f"Flowchart terminated at {node_name}")
                 expected = current_node.get("expected_criteria", "Standard diagnostic pattern")
 
@@ -551,7 +561,7 @@ class StructuredDiagnosisFlow:
         full_text: str,
     ) -> Dict[str, Any]:
         """Execute the tool or inspection logic specified by an ActionNode."""
-        action_type = node.get("action_type")
+        action_type = node.get("action_type") or node.get("action_name")
 
         if action_type == "enter_login_domain":
             return {"Domain": "LOGIN", "Status": "Entering Login Domain Deep Diagnosis"}
@@ -999,6 +1009,52 @@ class StructuredDiagnosisFlow:
             state_vars["analyzed_symptoms"] = symptoms
             return {"IdentifiedSymptoms": symptoms}
 
+        elif action_type == "classify_object_issue":
+            has_wiz = any(k in full_text for k in ["wizard", "product search", "wizard app", "blank wizard"])
+            has_obj_field = any(k in full_text for k in ["object access", "field access", "fls", "permission", "cannot view", "cannot edit", "insufficient privileges", "object permission"])
+            is_obj = any(k in full_text for k in ["object access", "crud", "object permission", "cannot create record", "cannot delete record", "insufficient privileges on object"])
+            is_field = any(k in full_text for k in ["field access", "fls", "field not visible", "field not editable", "cannot edit field", "cannot view field", "field permission"])
+            
+            if "has_wizard_symptom" not in state_vars:
+                state_vars["has_wizard_symptom"] = has_wiz
+            if "has_object_or_field_symptom" not in state_vars:
+                state_vars["has_object_or_field_symptom"] = has_obj_field
+            if "is_object_access_issue" not in state_vars:
+                state_vars["is_object_access_issue"] = is_obj
+            if "is_field_access_issue" not in state_vars:
+                state_vars["is_field_access_issue"] = is_field
+            
+            return {
+                "HasWizardSymptom": state_vars["has_wizard_symptom"],
+                "HasObjectOrFieldSymptom": state_vars["has_object_or_field_symptom"],
+                "IsObjectAccessIssue": state_vars["is_object_access_issue"],
+                "IsFieldAccessIssue": state_vars["is_field_access_issue"],
+            }
+
+        elif action_type == "retrieve_contact_wizard_details":
+            user_details = state_vars.get("user_details") or {}
+            contact_id = user_details.get("ContactId") or state_vars.get("contact_id")
+            contact = cache.get(f"Contact:{contact_id}") if (cache and contact_id) else None
+            if not contact:
+                contact = state_vars.get("contact_details") or {}
+            
+            wizard_country = contact.get("Wizard_Country__c") or state_vars.get("wizard_country")
+            is_blank = state_vars.get("is_wizard_country_blank")
+            if is_blank is None:
+                is_blank = not bool(wizard_country)
+                state_vars["is_wizard_country_blank"] = is_blank
+            
+            ev_id = f"ev_wizard_contact_{uuid.uuid4().hex[:6]}"
+            new_ev = {
+                "evidence_id": ev_id,
+                "tool_name": "salesforce_get_contact_details",
+                "field_name": "Wizard_Country__c",
+                "observed_value": {"ContactId": contact_id, "Wizard_Country__c": wizard_country, "IsBlank": is_blank},
+            }
+            recorded_evidence.append(new_ev)
+            new_evidence.append(new_ev)
+            return {"ContactId": contact_id, "Wizard_Country__c": wizard_country, "IsBlank": is_blank}
+
         return {}
 
     def _evaluate_decision_condition(
@@ -1015,7 +1071,14 @@ class StructuredDiagnosisFlow:
         if condition_key == "incident_domain":
             domain_val = str(state_vars.get("domain") or "").upper()
             if not domain_val:
-                domain_val = "APPLICATION" if any(k in full_text for k in ["cc360", "pharm", "conga", "clm", "apttus", "x-author", "xauthor"]) else "LOGIN"
+                if any(k in full_text for k in ["wizard", "product search"]):
+                    domain_val = "OBJECT"
+                elif any(k in full_text for k in ["report", "dashboard", "opportunity", "record sharing", "sharing rule"]):
+                    domain_val = "RECORD"
+                elif any(k in full_text for k in ["cc360", "pharm", "conga", "clm", "apttus", "x-author", "xauthor"]):
+                    domain_val = "APPLICATION"
+                else:
+                    domain_val = "LOGIN"
             state_vars["domain"] = domain_val
             cmp_info = {
                 "decision_point": "Route by Incident Domain",
@@ -1685,6 +1748,76 @@ class StructuredDiagnosisFlow:
                 "reasoning": "Agreement - Apttus Permission Set is assigned." if val else "Agreement - Apttus Permission Set is MISSING from user record.",
             }
             return val, {"Apttus_PS_Assigned": val, "PermissionSets": assigned}, cmp_info
+
+        elif condition_key == "has_wizard_symptom":
+            val = bool(state_vars.get("has_wizard_symptom"))
+            cmp_info = {
+                "decision_point": "Has Description contained 'Wizard App or Product Search Issue' Symptom?",
+                "rule_evaluated": "Check if incident symptoms mention Wizard App or Product Search",
+                "expected_criteria": "Symptom contains Wizard App or Product Search",
+                "target_value": full_text,
+                "baseline_value": "Wizard App / Product Search",
+                "comparison_result": "MATCH" if val else "NO_MATCH",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Description contains Wizard App or Product Search symptoms." if val else "No Wizard App or Product Search symptom identified.",
+            }
+            return val, {"HasWizardSymptom": val}, cmp_info
+
+        elif condition_key == "is_wizard_country_blank":
+            val = bool(state_vars.get("is_wizard_country_blank"))
+            cmp_info = {
+                "decision_point": "Is Wizard_Country__c Blank?",
+                "rule_evaluated": "Check if Contact.Wizard_Country__c is blank or null",
+                "expected_criteria": "Wizard_Country__c is populated",
+                "target_value": str(state_vars.get("wizard_country")),
+                "baseline_value": "Non-empty string",
+                "comparison_result": "BLANK" if val else "POPULATED",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Contact Wizard_Country__c is blank/null." if val else "Contact Wizard_Country__c is populated.",
+            }
+            return val, {"Wizard_Country_Blank": val}, cmp_info
+
+        elif condition_key == "has_object_or_field_symptom":
+            val = bool(state_vars.get("has_object_or_field_symptom"))
+            cmp_info = {
+                "decision_point": "Has Description contained 'Object or Field Access Issue' Symptom?",
+                "rule_evaluated": "Check if incident symptoms mention Object or Field access",
+                "expected_criteria": "Symptom contains Object or Field access",
+                "target_value": full_text,
+                "baseline_value": "Object / Field Access",
+                "comparison_result": "MATCH" if val else "NO_MATCH",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Description contains Object or Field Access symptoms." if val else "No Object or Field Access symptom identified.",
+            }
+            return val, {"HasObjectOrFieldSymptom": val}, cmp_info
+
+        elif condition_key == "is_object_access_issue":
+            val = bool(state_vars.get("is_object_access_issue"))
+            cmp_info = {
+                "decision_point": "Is Object Access Issue?",
+                "rule_evaluated": "Check if issue is an Object-level access (CRUD) permission issue",
+                "expected_criteria": "Object access issue",
+                "target_value": full_text,
+                "baseline_value": "Object CRUD Permission",
+                "comparison_result": "OBJECT_ISSUE" if val else "NOT_OBJECT_ISSUE",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Identified as Object Access Issue." if val else "Not an Object Access Issue.",
+            }
+            return val, {"IsObjectAccessIssue": val}, cmp_info
+
+        elif condition_key == "is_field_access_issue":
+            val = bool(state_vars.get("is_field_access_issue"))
+            cmp_info = {
+                "decision_point": "Is Field Access Issue?",
+                "rule_evaluated": "Check if issue is a Field-Level Security (FLS) permission issue",
+                "expected_criteria": "Field access / FLS issue",
+                "target_value": full_text,
+                "baseline_value": "FLS Permission",
+                "comparison_result": "FIELD_ISSUE" if val else "NOT_FIELD_ISSUE",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Identified as Field Access Issue." if val else "Not a Field Access Issue.",
+            }
+            return val, {"IsFieldAccessIssue": val}, cmp_info
 
         cmp_info = {
             "decision_point": condition_key,
