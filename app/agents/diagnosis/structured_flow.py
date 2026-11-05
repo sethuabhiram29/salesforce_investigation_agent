@@ -30,6 +30,10 @@ from app.tools.salesforce import (
     salesforce_audit_trail_search,
     salesforce_check_delegated_admin,
     identity_team_engage,
+    salesforce_get_object_permissions,
+    salesforce_get_record_access,
+    salesforce_compare_user_access,
+    salesforce_get_contact_wizard_details,
 )
 from app.tools.service_now import (
     servicenow_add_work_notes,
@@ -976,6 +980,17 @@ class StructuredDiagnosisFlow:
             state_vars["permission_sets"] = ps_list
             state_vars["package_licenses"] = pkg_list
             state_vars["public_groups"] = grp_list
+
+            ev_id = f"ev_ps_{uuid.uuid4().hex[:6]}"
+            new_ev = {
+                "evidence_id": ev_id,
+                "tool_name": "salesforce_get_user_permission_sets",
+                "field_name": "PermissionSetAssignment",
+                "observed_value": {"UserId": user_id, "PermissionSets": ps_list, "PackageLicenses": pkg_list, "PublicGroups": grp_list},
+            }
+            recorded_evidence.append(new_ev)
+            new_evidence.append(new_ev)
+
             return {
                 "Target": target,
                 "UserId": user_id,
@@ -991,7 +1006,7 @@ class StructuredDiagnosisFlow:
                 app_type = "CC360"
             elif any(k in full_text for k in ["pharm", "pharma", "pure fishing", "community user"]):
                 app_type = "PharmApp"
-            elif any(k in full_text for k in ["conga", "clm", "apttus", "x-author", "xauthor", "contract"]):
+            elif any(k in full_text for k in ["conga", "clm", "apttus", "x-author", "xauthor", "contract", "crm content", "content library", "content"]):
                 app_type = "CongaApp"
             state_vars["classified_app_type"] = app_type
             return {"ClassifiedApp": app_type}
@@ -1032,24 +1047,35 @@ class StructuredDiagnosisFlow:
             }
 
         elif action_type == "retrieve_contact_wizard_details":
-            user_details = state_vars.get("user_details") or {}
+            user_details = cache.get("User") or state_vars.get("user_details") or {}
+            user_id = user_details.get("Id") or state_vars.get("target_identifier")
             contact_id = user_details.get("ContactId") or state_vars.get("contact_id")
-            contact = cache.get(f"Contact:{contact_id}") if (cache and contact_id) else None
-            if not contact:
-                contact = state_vars.get("contact_details") or {}
-            
-            wizard_country = contact.get("Wizard_Country__c") or state_vars.get("wizard_country")
+
+            # Dynamically call Salesforce MCP tool for contact wizard details
+            contact_info = salesforce_get_contact_wizard_details(user_id) if user_id else {}
+            if (not contact_info or not contact_info.get("Wizard_Country__c")) and contact_id:
+                soql_res = salesforce_execute_soql(f"SELECT Id, Name, Wizard_Country__c FROM Contact WHERE Id = '{contact_id}'")
+                if soql_res:
+                    contact_info = soql_res[0]
+
+            if not contact_info and state_vars.get("contact_details"):
+                contact_info = state_vars.get("contact_details")
+
+            wizard_country = contact_info.get("Wizard_Country__c") if isinstance(contact_info, dict) else None
+            if wizard_country is None and "wizard_country" in state_vars:
+                wizard_country = state_vars.get("wizard_country")
+
             is_blank = state_vars.get("is_wizard_country_blank")
             if is_blank is None:
                 is_blank = not bool(wizard_country)
                 state_vars["is_wizard_country_blank"] = is_blank
-            
+
             ev_id = f"ev_wizard_contact_{uuid.uuid4().hex[:6]}"
             new_ev = {
                 "evidence_id": ev_id,
-                "tool_name": "salesforce_get_contact_details",
-                "field_name": "Wizard_Country__c",
-                "observed_value": {"ContactId": contact_id, "Wizard_Country__c": wizard_country, "IsBlank": is_blank},
+                "tool_name": "salesforce_get_contact_wizard_details",
+                "field_name": "Contact.Wizard_Country__c",
+                "observed_value": {"UserId": user_id, "ContactId": contact_id, "Wizard_Country__c": wizard_country, "IsBlank": is_blank},
             }
             recorded_evidence.append(new_ev)
             new_evidence.append(new_ev)
@@ -1074,52 +1100,172 @@ class StructuredDiagnosisFlow:
             }
 
         elif action_type == "rec_check_obj_perms_report":
+            user_details = cache.get("User") or state_vars.get("user_details") or {}
+            user_id = user_details.get("Id")
             missing = state_vars.get("rec_missing_obj_perms_report")
             if missing is None:
-                missing = False
+                if user_id:
+                    perms = salesforce_get_object_permissions(user_id=user_id, object_name="Report")
+                    missing = not perms.get("PermissionsRead", True) if isinstance(perms, dict) else False
+                else:
+                    missing = False
                 state_vars["rec_missing_obj_perms_report"] = missing
+            
+            ev_id = f"ev_rec_obj_rep_{uuid.uuid4().hex[:6]}"
+            new_ev = {
+                "evidence_id": ev_id,
+                "tool_name": "salesforce_get_object_permissions",
+                "field_name": "Report.ObjectPermissions",
+                "observed_value": {"UserId": user_id, "MissingPermissions": missing},
+            }
+            recorded_evidence.append(new_ev)
+            new_evidence.append(new_ev)
             return {"MissingReportObjPerms": missing}
 
         elif action_type == "rec_check_folder_access":
+            user_details = cache.get("User") or state_vars.get("user_details") or {}
+            user_id = user_details.get("Id")
+            folder_id = state_vars.get("folder_id") or "00lxx000001"
             missing = state_vars.get("rec_folder_access_missing")
             if missing is None:
-                missing = True
+                soql = f"SELECT Id, FolderId, UserOrGroupId, AccessLevel FROM FolderMember WHERE FolderId = '{folder_id}'"
+                members = salesforce_execute_soql(soql)
+                missing = not bool(members)
                 state_vars["rec_folder_access_missing"] = missing
+
+            ev_id = f"ev_rec_folder_{uuid.uuid4().hex[:6]}"
+            new_ev = {
+                "evidence_id": ev_id,
+                "tool_name": "salesforce_execute_soql",
+                "field_name": "FolderMember.AccessLevel",
+                "observed_value": {"FolderId": folder_id, "FolderAccessMissing": missing},
+            }
+            recorded_evidence.append(new_ev)
+            new_evidence.append(new_ev)
             return {"FolderAccessMissing": missing}
 
         elif action_type == "rec_check_obj_perms_opp_case":
+            user_details = cache.get("User") or state_vars.get("user_details") or {}
+            user_id = user_details.get("Id")
             missing = state_vars.get("rec_missing_obj_perms_opp_case")
             if missing is None:
-                missing = False
+                if user_id:
+                    perms = salesforce_get_object_permissions(user_id=user_id, object_name="Opportunity")
+                    missing = not perms.get("PermissionsRead", True) if isinstance(perms, dict) else False
+                else:
+                    missing = False
                 state_vars["rec_missing_obj_perms_opp_case"] = missing
+
+            ev_id = f"ev_rec_obj_opp_{uuid.uuid4().hex[:6]}"
+            new_ev = {
+                "evidence_id": ev_id,
+                "tool_name": "salesforce_get_object_permissions",
+                "field_name": "Opportunity.ObjectPermissions",
+                "observed_value": {"UserId": user_id, "MissingPermissions": missing},
+            }
+            recorded_evidence.append(new_ev)
+            new_evidence.append(new_ev)
             return {"MissingOppCaseObjPerms": missing}
 
         elif action_type == "rec_review_opp_case_sharing":
+            user_details = cache.get("User") or state_vars.get("user_details") or {}
+            user_id = user_details.get("Id")
+            rec_id = state_vars.get("record_id") or "006xx000001"
+            if user_id and rec_id and state_vars.get("rec_opp_case_has_read_access") is None:
+                acc = salesforce_get_record_access(user_id=user_id, record_id=rec_id)
+                has_read = acc.get("HasReadAccess", False) if isinstance(acc, dict) else False
+                state_vars["rec_opp_case_has_read_access"] = has_read
+
             missing = state_vars.get("rec_opp_case_missing_sharing_path")
             if missing is None:
-                missing = True
+                missing = not bool(state_vars.get("rec_opp_case_has_read_access", False))
                 state_vars["rec_opp_case_missing_sharing_path"] = missing
+
+            ev_id = f"ev_rec_opp_sharing_{uuid.uuid4().hex[:6]}"
+            new_ev = {
+                "evidence_id": ev_id,
+                "tool_name": "salesforce_get_record_access",
+                "field_name": "UserRecordAccess.HasReadAccess",
+                "observed_value": {"UserId": user_id, "RecordId": rec_id, "MissingSharingPath": missing},
+            }
+            recorded_evidence.append(new_ev)
+            new_evidence.append(new_ev)
             return {"MissingOppCaseSharingPath": missing}
 
         elif action_type == "rec_check_obj_perms_record_id":
+            user_details = cache.get("User") or state_vars.get("user_details") or {}
+            user_id = user_details.get("Id")
+            record_id = state_vars.get("record_id") or "001xx000001"
             missing = state_vars.get("rec_missing_obj_perms_record")
             if missing is None:
-                missing = False
+                if user_id:
+                    target_obj = "Account" if str(record_id).startswith("001") else "Opportunity" if str(record_id).startswith("006") else "Contact"
+                    perms = salesforce_get_object_permissions(user_id=user_id, object_name=target_obj)
+                    missing = not perms.get("PermissionsRead", True) if isinstance(perms, dict) else False
+                else:
+                    missing = False
                 state_vars["rec_missing_obj_perms_record"] = missing
+
+            ev_id = f"ev_rec_obj_rec_{uuid.uuid4().hex[:6]}"
+            new_ev = {
+                "evidence_id": ev_id,
+                "tool_name": "salesforce_get_object_permissions",
+                "field_name": "Record.ObjectPermissions",
+                "observed_value": {"UserId": user_id, "RecordId": record_id, "MissingPermissions": missing},
+            }
+            recorded_evidence.append(new_ev)
+            new_evidence.append(new_ev)
             return {"MissingRecordObjPerms": missing}
 
         elif action_type == "rec_review_sharing_path":
+            user_details = cache.get("User") or state_vars.get("user_details") or {}
+            user_id = user_details.get("Id")
+            rec_id = state_vars.get("record_id") or "001xx000001"
+            if user_id and rec_id and state_vars.get("rec_record_has_read_access") is None:
+                acc = salesforce_get_record_access(user_id=user_id, record_id=rec_id)
+                has_read = acc.get("HasReadAccess", False) if isinstance(acc, dict) else False
+                state_vars["rec_record_has_read_access"] = has_read
+
             missing = state_vars.get("rec_missing_sharing_path")
             if missing is None:
-                missing = True
+                missing = not bool(state_vars.get("rec_record_has_read_access", False))
                 state_vars["rec_missing_sharing_path"] = missing
+
+            ev_id = f"ev_rec_sharing_{uuid.uuid4().hex[:6]}"
+            new_ev = {
+                "evidence_id": ev_id,
+                "tool_name": "salesforce_get_record_access",
+                "field_name": "UserRecordAccess.HasReadAccess",
+                "observed_value": {"UserId": user_id, "RecordId": rec_id, "MissingSharingPath": missing},
+            }
+            recorded_evidence.append(new_ev)
+            new_evidence.append(new_ev)
             return {"MissingRecordSharingPath": missing}
 
         elif action_type == "rec_compare_mirror_fls":
+            user_details = cache.get("User") or state_vars.get("user_details") or {}
+            user_id = user_details.get("Id")
+            mirror_user = state_vars.get("mirror_user_details") or state_vars.get("mirror_user") or {}
+            mirror_id = mirror_user.get("Id") if isinstance(mirror_user, dict) else None
+
             fls_missing = state_vars.get("rec_is_fls_missing")
             if fls_missing is None:
-                fls_missing = True
+                if user_id and mirror_id:
+                    comparison = salesforce_compare_user_access(user_id=user_id, mirror_user_id=mirror_id)
+                    fls_missing = bool(comparison.get("missing_field_permissions"))
+                else:
+                    fls_missing = True
                 state_vars["rec_is_fls_missing"] = fls_missing
+
+            ev_id = f"ev_rec_fls_{uuid.uuid4().hex[:6]}"
+            new_ev = {
+                "evidence_id": ev_id,
+                "tool_name": "salesforce_compare_user_access",
+                "field_name": "FieldPermissions.FLS",
+                "observed_value": {"UserId": user_id, "MirrorUserId": mirror_id, "FLSMissing": fls_missing},
+            }
+            recorded_evidence.append(new_ev)
+            new_evidence.append(new_ev)
             return {"FLSMissing": fls_missing}
 
         return {}

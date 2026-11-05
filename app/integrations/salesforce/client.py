@@ -750,7 +750,7 @@ class SalesforceMCPClient:
 
     def update_user_field(self, user_id: str, field_name: str, new_value: Any) -> Dict[str, Any]:
         """Execute an approved write operation to update a user record."""
-        allowed_fields = {"FederationIdentifier", "EmployeeNumber", "IsActive", "WizardCountry"}
+        allowed_fields = {"FederationIdentifier", "EmployeeNumber", "IsActive", "WizardCountry", "Wizard_Country__c", "UserPermissionsSFContentUser"}
         if field_name not in allowed_fields:
             return {
                 "success": False,

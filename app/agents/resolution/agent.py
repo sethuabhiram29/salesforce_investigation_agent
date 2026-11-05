@@ -534,10 +534,8 @@ class ResolutionAgent:
 
         # FederationIdentifier Missing or Azure Mismatch (LOGIN-4 / LOGIN-6)
         elif (
-            "FederationIdentifier" in hist_resolution
-            or "FederationIdentifier" in skill_text
-            or "Federation ID" in skill_text
-            or issue_code in ["LOGIN-4", "LOGIN-004", "LOGIN-6", "LOGIN-006"]
+            issue_code in ["LOGIN-4", "LOGIN-004", "LOGIN-6", "LOGIN-006"]
+            or (issue_code.startswith("LOGIN") and ("FederationIdentifier" in hist_resolution or "FederationIdentifier" in skill_text))
         ):
             target_field = "FederationIdentifier"
             target_emp_id = (
@@ -577,11 +575,159 @@ class ResolutionAgent:
                     "FederationIdentifier IS NULL or Blank",
                 ]
 
-        # Dynamically check for WizardCountry
-        elif "WizardCountry" in hist_resolution or "WizardCountry" in skill_text:
+        # Application Domain Scenarios
+        elif issue_code in ["APP-CC360-PS", "APP-CC360-PERMISSION-SET-MISSING"] or "cc360" in issue_code.lower():
+            target_field = "RITMGuidance"
+            proposed_value = "Create Manage User Access RITM for assignment of 'CC360 Community User' Permission Set. Route to assignment group: TCS-America-SFDC. Portal Admin: Heather McKelvey (Heather.Mckelvey@bd.com)."
+            justification = "Per SOP APP-CC360: User lacks CC360 Community User Permission Set. Guide user to create Manage User Access RITM."
+            preconditions = [
+                "User exists in NA Org",
+                "User.IsActive == True",
+                "CC360 Community User Permission Set Not Assigned",
+            ]
+
+        elif issue_code in ["APP-COMMUNITY-PS", "APP-COMMUNITY-PERMISSION-SET-MISSING"] or "cmty" in issue_code.lower() or "pharm" in issue_code.lower():
+            target_field = "RITMGuidance"
+            proposed_value = "Create Manage User Access RITM for assignment of 'Cmty-PS Community User' Permission Set. Route to assignment group: TCS-America-SFDC. Portal Admin: Alexandra Kurpiel (Alexandra.KURPIEL@bd.com)."
+            justification = "Per SOP APP-COMMUNITY: User lacks Cmty-PS Community User Permission Set. Guide user to create Manage User Access RITM."
+            preconditions = [
+                "User exists in NA Org",
+                "User.IsActive == True",
+                "Cmty-PS Community User Permission Set Not Assigned",
+            ]
+
+        elif issue_code in ["APP-CLM-LICENSE", "APP-CLM-PACKAGE-LICENSE-MISSING"] or "clm" in issue_code.lower():
+            target_field = "RITMGuidance"
+            proposed_value = "Submit Manage User Access request for Conga Contract Lifecycle Management (CLM) onboarding and package license assignment."
+            justification = "Per SOP APP-CLM: User lacks Conga CLM Package License."
+            preconditions = [
+                "User exists in NA Org",
+                "User.IsActive == True",
+                "Conga CLM Package License Missing",
+            ]
+
+        elif issue_code in ["APP-CRM-CONTENT", "APP-CRM-CONTENT-USER-DISABLED"] or "crm" in issue_code.lower():
+            target_field = "UserPermissionsSFContentUser"
+            proposed_value = True
+            justification = "Per SOP APP-CRM-CONTENT: Enable CRM Content User checkbox on Salesforce User record."
+            preconditions = [
+                "User exists in NA Org",
+                "User.IsActive == True",
+                "User.UserPermissionsSFContentUser == False",
+            ]
+
+        elif issue_code in ["APP-XAUTHOR-PS", "APP-XAUTHOR-PERMISSION-SET-MISSING"] or "xauthor" in issue_code.lower():
+            target_field = "RITMGuidance"
+            proposed_value = "Submit Manage User Access request for Apttus X-Author for Excel Permission Set assignment. Route to TCS-America-SFDC."
+            justification = "Per SOP APP-XAUTHOR: Apttus X-Author Permission Set missing."
+            preconditions = [
+                "User exists in NA Org",
+                "User.IsActive == True",
+                "Apttus X-Author Permission Set Not Assigned",
+            ]
+
+        elif issue_code in ["APP-BU-MISSING"] or "bu" in issue_code.lower():
+            target_field = "RITMGuidance"
+            proposed_value = "Assign user to Business Unit public group / Chatter group per division onboarding process."
+            justification = "Per SOP APP-BU-MISSING: Business Unit membership missing."
+            preconditions = [
+                "User exists in NA Org",
+                "User.IsActive == True",
+                "BU Access Missing",
+            ]
+
+        elif issue_code in ["APP-APTTUS-PS", "APP-APTTUS-PERMISSION-SET-MISSING"] or "apttus" in issue_code.lower():
+            target_field = "RITMGuidance"
+            proposed_value = "Submit Manage User Access RITM for Agreement - Apttus Permission Set assignment. Route to TCS-America-SFDC."
+            justification = "Per SOP APP-APTTUS: Agreement Apttus Permission Set missing."
+            preconditions = [
+                "User exists in NA Org",
+                "User.IsActive == True",
+                "Agreement - Apttus Permission Set Not Assigned",
+            ]
+
+        # Object Domain Scenarios
+        elif issue_code in ["OBJECT-1", "OBJECT-001", "OBJECT-WIZARD-COUNTRY-BLANK"] or "wizard" in issue_code.lower():
             target_field = "WizardCountry"
-            proposed_value = "US"
-            justification = f"Dynamically derived from canonical skill '{loaded_skill.title}': Populate missing WizardCountry to restore product access."
+            user_country = affected_user.get("Country") or affected_user.get("CountryCode") or "US"
+            proposed_value = str(user_country)
+            justification = f"Dynamically derived from SOP OBJECT-1: Populate missing WizardCountry ('{proposed_value}') on Contact to restore Wizard App and product search access."
+            preconditions = [
+                "User exists in NA Org",
+                "User.IsActive == True",
+                "Contact.Wizard_Country__c IS NULL or Blank",
+            ]
+
+        elif issue_code in ["OBJECT-2", "OBJECT-002", "OBJECT-ACCESS-MISSING"]:
+            target_field = "RITMGuidance"
+            proposed_value = "Submit Manage User Access request for Object CRUD Permission Set assignment. Route to TCS-America-SFDC."
+            justification = "Per SOP OBJECT-2: User lacks required Object CRUD permissions."
+            preconditions = [
+                "User exists in NA Org",
+                "User.IsActive == True",
+                "Object CRUD Permissions Missing",
+            ]
+
+        elif issue_code in ["OBJECT-3", "OBJECT-003", "OBJECT-FLS-MISSING"]:
+            target_field = "RITMGuidance"
+            proposed_value = "Submit Manage User Access request for Field-Level Security (FLS) Permission Set assignment. Route to TCS-America-SFDC."
+            justification = "Per SOP OBJECT-3: User lacks Field-Level Security (FLS) permissions."
+            preconditions = [
+                "User exists in NA Org",
+                "User.IsActive == True",
+                "Field-Level Security Missing",
+            ]
+
+        # Record Domain Scenarios
+        elif issue_code in ["RECORD-1", "RECORD-001", "RECORD-FOLDER-ACCESS-MISSING"]:
+            target_field = "Guidance"
+            proposed_value = "Grant Viewer access on target Report/Dashboard Folder via Folder Sharing to user or user's Public Group."
+            justification = "Per SOP RECORD-1: User lacks access to Report/Dashboard Folder."
+            preconditions = [
+                "User exists in NA Org",
+                "User.IsActive == True",
+                "Folder Access Missing",
+            ]
+
+        elif issue_code in ["RECORD-2", "RECORD-002", "RECORD-OPP-CASE-SHARING-MISSING"]:
+            target_field = "Guidance"
+            proposed_value = "Add user to Opportunity Team / Case Team with Read access or create manual record share."
+            justification = "Per SOP RECORD-2: User lacks record sharing for Opportunity/Case."
+            preconditions = [
+                "User exists in NA Org",
+                "User.IsActive == True",
+                "Opportunity/Case Record Sharing Missing",
+            ]
+
+        elif issue_code in ["RECORD-3", "RECORD-003", "RECORD-SHARING-MISSING"]:
+            target_field = "Guidance"
+            proposed_value = "Create record share or assign user to public group granting row-level access to the record."
+            justification = "Per SOP RECORD-3: User lacks row-level record sharing."
+            preconditions = [
+                "User exists in NA Org",
+                "User.IsActive == True",
+                "Record Sharing Missing",
+            ]
+
+        elif issue_code in ["RECORD-4", "RECORD-004", "RECORD-FLS-MISSING"]:
+            target_field = "RITMGuidance"
+            proposed_value = "Submit Manage User Access RITM for Field-Level Security (FLS) Permission Set assignment."
+            justification = "Per SOP RECORD-4: User lacks FLS permissions on record field."
+            preconditions = [
+                "User exists in NA Org",
+                "User.IsActive == True",
+                "Record Field FLS Missing",
+            ]
+
+        elif issue_code in ["RECORD-OBJ-PERM-MISSING"]:
+            target_field = "RITMGuidance"
+            proposed_value = "Submit Manage User Access RITM for Object-level Read/Create permissions."
+            justification = "Per SOP RECORD-OBJ-PERM-MISSING: Object-level permissions missing."
+            preconditions = [
+                "User exists in NA Org",
+                "User.IsActive == True",
+                "Object Permissions Missing",
+            ]
 
         else:
             # Dynamic regex extraction on skill text for any 'Only the <Field> field may be modified'

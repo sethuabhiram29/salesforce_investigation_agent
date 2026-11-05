@@ -123,6 +123,8 @@ def validate_resolution_action(
         "FederationIdentifier",
         "IsActive",
         "WizardCountry",
+        "Wizard_Country__c",
+        "UserPermissionsSFContentUser",
         "SetupGuide",
         "Guidance",
         "Documentation",

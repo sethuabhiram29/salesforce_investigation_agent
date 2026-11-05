@@ -108,14 +108,16 @@ def salesforce_add_user_to_public_group(user_id: str, group_name: str) -> Dict[s
 
 
 def salesforce_get_contact_wizard_details(user_id: str) -> Dict[str, Any]:
-    """Retrieve Contact record details including WizardCountry field."""
+    """Retrieve Contact record details including WizardCountry / Wizard_Country__c field."""
     user = salesforce_client.get_user_details(user_id)
-    if "error" in user:
-        return user
+    if not isinstance(user, dict) or "error" in user:
+        return user if isinstance(user, dict) else {}
+    wiz_val = user.get("WizardCountry") or user.get("Wizard_Country__c")
     return {
         "user_id": user_id,
-        "WizardCountry": user.get("WizardCountry"),
-        "is_configured": user.get("WizardCountry") is not None,
+        "WizardCountry": wiz_val,
+        "Wizard_Country__c": wiz_val,
+        "is_configured": wiz_val is not None and str(wiz_val).strip() != "",
     }
 
 

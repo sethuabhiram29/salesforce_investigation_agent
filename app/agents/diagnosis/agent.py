@@ -35,17 +35,18 @@ class DiagnosisAgent:
     # Complete catalog of known root cause scenarios per domain
     DOMAIN_SCENARIOS = {
         "LOGIN": [
-            "LOGIN-1", "LOGIN-2", "LOGIN-3", "LOGIN-4",
-            "LOGIN-5", "LOGIN-6", "LOGIN-7", "LOGIN-8", "LOGIN-9",
+            "LOGIN-1", "LOGIN-1B", "LOGIN-2", "LOGIN-3", "LOGIN-3A", "LOGIN-4",
+            "LOGIN-5", "LOGIN-6", "LOGIN-7", "LOGIN-8", "LOGIN-9", "LOGIN-10",
+        ],
+        "APPLICATION": [
+            "APP-CC360-PS", "APP-COMMUNITY-PS", "APP-CLM-LICENSE",
+            "APP-CRM-CONTENT", "APP-XAUTHOR-PS", "APP-BU-MISSING", "APP-APTTUS-PS",
         ],
         "OBJECT": [
             "OBJECT-1", "OBJECT-2", "OBJECT-3",
         ],
         "RECORD": [
-            "RECORD-1", "RECORD-2", "RECORD-3",
-        ],
-        "APPLICATION": [
-            "APPLICATION-1", "APPLICATION-2", "APPLICATION-3", "APPLICATION-4",
+            "RECORD-1", "RECORD-2", "RECORD-3", "RECORD-4", "RECORD-OBJ-PERM-MISSING",
         ],
     }
 
@@ -115,6 +116,9 @@ class DiagnosisAgent:
         rec_ids = state.get("triage_result", {}).get("extracted_entities", {}).get("record_ids", [])
         target_rec_id = rec_ids[0] if rec_ids else None
 
+        state.setdefault("step_audit_trail", [])
+        evidence_cache = state.setdefault("evidence_cache", {})
+
         incident_obj = state.get("incident", {})
         context = {
             "target_object": target_object,
@@ -123,17 +127,17 @@ class DiagnosisAgent:
             "incident_summary": incident_obj.get("short_description", ""),
             "incident_description": incident_obj.get("description", ""),
         }
+        if evidence_cache:
+            context.update(evidence_cache)
 
         confirmed_result: Optional[DiagnosisResult] = None
         confirmed_issue_code: Optional[str] = None
         attempted_issues: List[str] = []
 
         # 3. Systematic Hypothesis Evaluation & Fallback Loop
-        state.setdefault("step_audit_trail", [])
-        evidence_cache = state.setdefault("evidence_cache", {})
 
-        # Structured Flow: For LOGIN or APPLICATION issues, follow the exact flowchart decision tree knowledge graph
-        if initial_domain in ("LOGIN", "APPLICATION"):
+        # Structured Flow: Follow exact multi-domain decision tree knowledge graph
+        if initial_domain in ("LOGIN", "APPLICATION", "OBJECT", "RECORD"):
             context["domain"] = initial_domain
             structured_flow = StructuredDiagnosisFlow()
             diagnosis_result, new_evidence, traversal_steps = structured_flow.execute(
@@ -179,7 +183,7 @@ class DiagnosisAgent:
                 })
 
                 state["diagnosis_result"] = diagnosis_result.dict()
-                state["incident_domain"] = "LOGIN"
+                state["incident_domain"] = initial_domain
 
                 state.setdefault("trace_events", []).append({
                     "stage": "diagnosis",
@@ -188,15 +192,16 @@ class DiagnosisAgent:
                     "details": {
                         "status": "confirmed",
                         "issue_code": issue_code,
-                        "flowchart": "Login Issues Decision Tree",
+                        "flowchart": f"{initial_domain.capitalize()} Issues Decision Tree",
                     },
                 })
                 return state
             else:
-                fallback_domains = [d for d in domains_to_evaluate if d != "LOGIN"]
+                fallback_domains = [d for d in domains_to_evaluate if d != initial_domain]
                 if fallback_domains:
                     logger.info(
-                        "Structured flow for LOGIN did not confirm an issue (%s). Proceeding to evaluate fallback domains: %s",
+                        "Structured flow for %s did not confirm an issue (%s). Proceeding to evaluate fallback domains: %s",
+                        initial_domain,
                         issue_code,
                         fallback_domains,
                     )
@@ -227,7 +232,7 @@ class DiagnosisAgent:
                     })
 
                     state["diagnosis_result"] = diagnosis_result.dict()
-                    state["incident_domain"] = "LOGIN"
+                    state["incident_domain"] = initial_domain
 
                     state.setdefault("trace_events", []).append({
                         "stage": "diagnosis",
@@ -236,7 +241,7 @@ class DiagnosisAgent:
                         "details": {
                             "status": "escalation_required",
                             "issue_code": issue_code,
-                            "flowchart": "Login Issues Decision Tree",
+                            "flowchart": f"{initial_domain.capitalize()} Issues Decision Tree",
                         },
                     })
                     return state
