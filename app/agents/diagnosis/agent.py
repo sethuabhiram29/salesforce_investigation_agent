@@ -96,6 +96,24 @@ class DiagnosisAgent:
             d for d in self.DOMAIN_FALLBACKS.get(initial_domain, []) if d != initial_domain
         ]
 
+        triage_res = state.get("triage_result", {})
+        is_ambiguous = bool(triage_res.get("is_ambiguous", False))
+        domain_confidences = triage_res.get("domain_confidences", {})
+        if not domain_confidences or not isinstance(domain_confidences, dict):
+            domain_confidences = {initial_domain: 0.95}
+
+        # Summary of Rules:
+        # 1. No Ambiguity (is_ambiguous=False): Strict domain lock. Fallback sequence: None. Low confidence domains (<20%): Ignored.
+        # 2. Ambiguity Detected (is_ambiguous=True): Fallback sequence strictly follows descending confidence order for any domain >= 20% (0.20 cutoff). Domains < 20% discarded.
+        eligible_domains = [initial_domain]
+        if is_ambiguous:
+            sorted_candidates = sorted(
+                domain_confidences.items(), key=lambda kv: kv[1], reverse=True
+            )
+            for d_name, d_score in sorted_candidates:
+                if d_name != initial_domain and d_score >= 0.20:
+                    eligible_domains.append(d_name)
+
         # Retrieve structured Neo4j investigation graph plan for domain
         domain_plan = neo4j_repository.get_domain_plan(initial_domain)
         state["neo4j_plan"] = domain_plan
@@ -105,7 +123,7 @@ class DiagnosisAgent:
             identifier,
             domain_plan.get("source"),
             len(domain_plan.get("scenarios", [])),
-            domains_to_evaluate,
+            eligible_domains,
         )
 
         target_object = (
@@ -130,16 +148,11 @@ class DiagnosisAgent:
         if evidence_cache:
             context.update(evidence_cache)
 
-        confirmed_result: Optional[DiagnosisResult] = None
-        confirmed_issue_code: Optional[str] = None
         attempted_issues: List[str] = []
+        structured_flow = StructuredDiagnosisFlow()
 
-        # 3. Systematic Hypothesis Evaluation & Fallback Loop
-
-        # Structured Flow: Follow exact multi-domain decision tree knowledge graph
-        if initial_domain in ("LOGIN", "APPLICATION", "OBJECT", "RECORD"):
-            context["domain"] = initial_domain
-            structured_flow = StructuredDiagnosisFlow()
+        for dom_idx, current_domain in enumerate(eligible_domains):
+            context["domain"] = current_domain
             diagnosis_result, new_evidence, traversal_steps = structured_flow.execute(
                 target_identifier=identifier,
                 context=context,
@@ -183,61 +196,96 @@ class DiagnosisAgent:
                 })
 
                 state["diagnosis_result"] = diagnosis_result.dict()
-                state["incident_domain"] = initial_domain
+                state["incident_domain"] = current_domain
 
                 state.setdefault("trace_events", []).append({
                     "stage": "diagnosis",
                     "agent_name": "DiagnosisAgent",
-                    "action": f"Confirmed root cause as {issue_code} via Structured Flow",
+                    "action": f"Confirmed root cause as {issue_code} via Structured Flow ({current_domain})",
                     "details": {
                         "status": "confirmed",
                         "issue_code": issue_code,
-                        "flowchart": f"{initial_domain.capitalize()} Issues Decision Tree",
+                        "domain": current_domain,
+                        "flowchart": f"{current_domain.capitalize()} Issues Decision Tree",
                     },
                 })
                 return state
             else:
-                # Terminal escalation node (e.g. TERMINAL_OUT_OF_SCOPE, TERMINAL_LOGIN_MANUAL_REVIEW, etc.)
-                # Strictly respect domain boundaries: never leak across domains when out of scope
-                state["step_audit_trail"].append({
-                    "stage": "diagnosis",
-                    "step_order": len(state.get("step_audit_trail", [])) + 1,
-                    "step_name": f"Terminal Node Reached: Escalation Required ({issue_code})",
-                    "graph_node_id": f"STRUCTURED_FLOW_ESCALATE_{issue_code.replace('-', '_')}",
-                    "graph_node_name": f"Structured Flow Escalation: {issue_code}",
-                    "movement_direction": "Advance to Orchestrator Escalation Node",
-                    "status": "escalation_required",
-                    "status_reason": diagnosis_result.decision_basis,
-                    "current_step_details": diagnosis_result.decision_basis,
-                    "why_step_taken": "Flowchart reached an escalation boundary node requiring human review",
-                    "next_step": "Route to Tier-2 human support team per escalation policy",
-                    "next_step_reason": "Escalation node reached in flowchart.",
-                    "skill_file_loaded": None,
-                    "why_loaded": "Escalation node reached in flowchart.",
-                    "tool_called": "StructuredDiagnosisFlow",
-                    "tools_called": [e.get("tool_name") for e in new_evidence],
-                    "tool_result": diagnosis_result.observed_values,
-                    "observed_summary": diagnosis_result.observed_values,
-                    "expected_criteria": diagnosis_result.expected_criteria,
-                    "observed_values": diagnosis_result.observed_values,
-                    "comparison_summary": diagnosis_result.comparison_summary,
-                    "decision_basis": diagnosis_result.decision_basis,
-                })
-
-                state["diagnosis_result"] = diagnosis_result.dict()
-                state["incident_domain"] = initial_domain
-
-                state.setdefault("trace_events", []).append({
-                    "stage": "diagnosis",
-                    "agent_name": "DiagnosisAgent",
-                    "action": f"Escalated incident via Structured Flow ({issue_code})",
-                    "details": {
+                # Terminal non-confirmed node (OUT-OF-SCOPE / MANUAL-REVIEW)
+                remaining_eligible = eligible_domains[dom_idx + 1:]
+                if is_ambiguous and remaining_eligible:
+                    next_domain = remaining_eligible[0]
+                    curr_score = int(domain_confidences.get(current_domain, 0) * 100)
+                    next_score = int(domain_confidences.get(next_domain, 0) * 100)
+                    fallback_notice = (
+                        f"Investigation in primary domain '{current_domain}' ({curr_score}%) concluded without confirmation ({issue_code}). "
+                        f"Ambiguity detected: traversing directed fallback edge to next candidate domain '{next_domain}' "
+                        f"({next_score}% >= 20% cutoff)."
+                    )
+                    logger.info(fallback_notice)
+                    state["step_audit_trail"].append({
+                        "stage": "diagnosis",
+                        "step_order": len(state.get("step_audit_trail", [])) + 1,
+                        "step_name": f"Ambiguity Fallback: {current_domain} ({curr_score}%) -> {next_domain} ({next_score}%)",
+                        "graph_node_id": f"AMBIGUITY_FALLBACK_{current_domain}_TO_{next_domain}",
+                        "graph_node_name": f"Knowledge Graph Directed Fallback Edge: [{current_domain}] -> [{next_domain}]",
+                        "movement_direction": f"Advance along Directed Edge FALLBACK_CONFIDENCE_RANKED -> [Domain: {next_domain}]",
+                        "status": "in_progress",
+                        "status_reason": fallback_notice,
+                        "current_step_details": fallback_notice,
+                        "why_step_taken": f"Evaluated domain {current_domain}; transitioning to secondary candidate {next_domain}.",
+                        "next_step": f"Evaluate {next_domain} decision tree top-to-bottom",
+                        "next_step_reason": f"Evaluating {next_domain} candidate scenarios.",
+                        "tools_called": ["StructuredDiagnosisFlow"],
+                        "confidence_transition": {
+                            "from_domain": current_domain,
+                            "from_confidence": domain_confidences.get(current_domain, 0),
+                            "to_domain": next_domain,
+                            "to_confidence": domain_confidences.get(next_domain, 0),
+                        },
+                    })
+                    continue
+                else:
+                    # No more eligible fallback domains or strict domain lock: terminate at escalation_required
+                    state["step_audit_trail"].append({
+                        "stage": "diagnosis",
+                        "step_order": len(state.get("step_audit_trail", [])) + 1,
+                        "step_name": f"Terminal Node Reached: Escalation Required ({issue_code})",
+                        "graph_node_id": f"STRUCTURED_FLOW_ESCALATE_{issue_code.replace('-', '_')}",
+                        "graph_node_name": f"Structured Flow Escalation: {issue_code}",
+                        "movement_direction": "Advance to Orchestrator Escalation Node",
                         "status": "escalation_required",
-                        "issue_code": issue_code,
-                        "flowchart": f"{initial_domain.capitalize()} Issues Decision Tree",
-                    },
-                })
-                return state
+                        "status_reason": diagnosis_result.decision_basis,
+                        "current_step_details": diagnosis_result.decision_basis,
+                        "why_step_taken": "Flowchart reached an escalation boundary node requiring human review",
+                        "next_step": "Route to Tier-2 human support team per escalation policy",
+                        "next_step_reason": "Escalation node reached in flowchart.",
+                        "skill_file_loaded": None,
+                        "why_loaded": "Escalation node reached in flowchart.",
+                        "tool_called": "StructuredDiagnosisFlow",
+                        "tools_called": [e.get("tool_name") for e in new_evidence],
+                        "tool_result": diagnosis_result.observed_values,
+                        "observed_summary": diagnosis_result.observed_values,
+                        "expected_criteria": diagnosis_result.expected_criteria,
+                        "observed_values": diagnosis_result.observed_values,
+                        "comparison_summary": diagnosis_result.comparison_summary,
+                        "decision_basis": diagnosis_result.decision_basis,
+                    })
+
+                    state["diagnosis_result"] = diagnosis_result.dict()
+                    state["incident_domain"] = current_domain
+
+                    state.setdefault("trace_events", []).append({
+                        "stage": "diagnosis",
+                        "agent_name": "DiagnosisAgent",
+                        "action": f"Escalated incident via Structured Flow ({issue_code})",
+                        "details": {
+                            "status": "escalation_required",
+                            "issue_code": issue_code,
+                            "flowchart": f"{current_domain.capitalize()} Issues Decision Tree",
+                        },
+                    })
+                    return state
 
         historical_ranks = self._rank_candidates_from_history(state, initial_domain)
         logger.info("DiagnosisAgent extracted historical candidates: %s", historical_ranks)

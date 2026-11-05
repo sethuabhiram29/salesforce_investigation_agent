@@ -503,11 +503,51 @@ if start_btn:
                         **Orchestrator Stage Summary**: Evaluated incoming ticket narrative against canonical classification skill.
                         - **Classified Domain**: <span class="{domain_class}">{domain}</span>
                         - **Login URL / Endpoint**: <code>{state_update.get('login_url') or accumulated_state.get('login_url') or triage.get('login_url') or 'None cited in ticket (Skipping to Swimlane 2)'}</code>
-                        - **Ambiguity Detected**: `{"Yes (Broad symptom - will perform cross-domain probe)" if is_ambig else "No (High confidence)"}`
+                        - **Ambiguity Detected**: `{"Yes (Multi-domain fallback active)" if is_ambig else "No (Strict domain lock)"}`
                         - **Triage Reasoning**: *{triage.get("reasoning", "Extracted domain indicators from symptom profile.")}*
                         - 🎯 **Decision Basis**: *{triage_audit.get("decision_basis", "Domain determined by ticket narrative keywords.")}*
                         - ➡️ **Why Taking Next Step**: **{triage_audit.get("next_step_reason", "Advancing to diagnosis agent to evaluate candidate scenarios top-to-bottom without loading skill files.")}**
                         """, unsafe_allow_html=True)
+
+                        # Multi-Domain Confidence Distribution Bar & Fallback Rules
+                        domain_confidences = triage.get("domain_confidences", {})
+                        if domain_confidences:
+                            conf_items = sorted(domain_confidences.items(), key=lambda kv: kv[1], reverse=True)
+                            bars_html = """
+                            <div style='background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 14px; margin: 12px 0 16px 0;'>
+                                <div style='font-size: 0.94rem; font-weight: 700; color: #0f172a; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;'>
+                                    <span>📊 Multi-Domain Confidence Profile & Ambiguity Fallback Plan:</span>
+                                    <span style='font-size: 0.78rem; font-weight: 600; padding: 2px 8px; border-radius: 4px; background: """ + ("#dbeafe; color: #1e40af;'>" if is_ambig else "#dcfce7; color: #166534;'>") + ("Ambiguity Detected (Fallback Eligible)" if is_ambig else "High Confidence (Strict Domain Lock)") + """</span>
+                                </div>
+                            """
+                            for d_k, d_v in conf_items:
+                                pct = int(d_v * 100)
+                                is_primary = (d_k == domain)
+                                is_eligible = (not is_primary and d_v >= 0.20 and is_ambig)
+                                
+                                if is_primary:
+                                    status_tag = f"<span style='color: #16a34a; font-weight: 700;'>[PRIMARY DOMAIN - {pct}%]</span>"
+                                    bar_color = "#22c55e"
+                                elif is_eligible:
+                                    status_tag = f"<span style='color: #2563eb; font-weight: 600;'>[ELIGIBLE FALLBACK - {pct}% &ge; 20%]</span>"
+                                    bar_color = "#3b82f6"
+                                else:
+                                    status_tag = f"<span style='color: #94a3b8;'>[DISCARDED - {pct}% &lt; 20%]</span>" if is_ambig else f"<span style='color: #94a3b8;'>[LOCKED OUT - Zero Fallback]</span>"
+                                    bar_color = "#cbd5e1"
+                                
+                                bars_html += f"""
+                                <div style='margin-bottom: 7px;'>
+                                    <div style='display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 2px;'>
+                                        <span><b>{d_k}</b>: {status_tag}</span>
+                                        <span><b>{pct}%</b></span>
+                                    </div>
+                                    <div style='background: #e2e8f0; border-radius: 4px; height: 8px; width: 100%; overflow: hidden;'>
+                                        <div style='background: {bar_color}; width: {pct}%; height: 100%;'></div>
+                                    </div>
+                                </div>
+                                """
+                            bars_html += "</div>"
+                            st.markdown(bars_html, unsafe_allow_html=True)
 
                         # Explicit Tools Called Box
                         st.markdown(f"""

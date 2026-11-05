@@ -309,13 +309,22 @@ class TriageAgent:
             "resolution_source": resolution_source,
         }
 
+        domain_confidences = llm_output.get("domain_confidences")
+        if not domain_confidences or not isinstance(domain_confidences, dict) or len(domain_confidences) < 2:
+            fb = self._fallback_semantic_triage(summary, desc, caller_email, on_behalf_val)
+            domain_confidences = fb.get("domain_confidences", {domain: 0.95})
+            if "confidence" in fb and not llm_output.get("confidence"):
+                llm_output["confidence"] = fb["confidence"]
+
         extracted_entities["login_url"] = extracted_login_url
+        conf_val = float(domain_confidences.get(domain, 0.7 if is_ambiguous else 0.95))
         triage_result = TriageResult(
             domain=domain,
             is_ambiguous=is_ambiguous,
             extracted_entities=extracted_entities,
             login_url=extracted_login_url,
-            confidence=0.7 if is_ambiguous else 0.95,
+            confidence=conf_val,
+            domain_confidences=domain_confidences,
             reasoning=reasoning,
         )
         state["triage_result"] = triage_result.model_dump()
@@ -400,7 +409,8 @@ class TriageAgent:
                 f"- On Behalf Of: {on_behalf}\n\n"
                 f"Your task is to analyze the narrative and return a JSON object with:\n"
                 f"1. 'domain': One of 'LOGIN', 'OBJECT', 'RECORD', 'APPLICATION'.\n"
-                f"2. 'is_ambiguous': boolean (true if vague like 'can't access Salesforce' without detail).\n"
+                f"2. 'is_ambiguous': boolean (true if vague like 'can't access Salesforce' without detail or multiple domains plausible).\n"
+                f"3. 'domain_confidences': A JSON object with decimal confidences summing to 1.0, e.g. {{'LOGIN': 0.65, 'APPLICATION': 0.28, 'OBJECT': 0.04, 'RECORD': 0.03}}.\n"
                 f"3. 'affected_user_identifier': The user experiencing the problem (email, username, or full name e.g. 'Daniel Ortiz', 'Priya Nair'). Priority 1: description -> Priority 2: on_behalf_of -> Priority 3: caller.\n"
                 f"4. 'mirror_user_identifier': Any colleague mentioned whose access works fine or is used as a benchmark (email, username, or full name, null if none).\n"
                 f"5. 'login_url': Any specific Salesforce login URL mentioned in the narrative (e.g. 'https://customdomain.my.salesforce.com', 'test.salesforce.com', null if none).\n"
@@ -612,6 +622,56 @@ class TriageAgent:
 
         login_url = self._extract_login_url(full_text)
 
+        # Compute normalized multi-domain confidence distribution
+        scores = {"LOGIN": 0.02, "APPLICATION": 0.02, "OBJECT": 0.02, "RECORD": 0.02}
+
+        if dedicated_app_match:
+            scores["APPLICATION"] += 0.80
+        elif app_match:
+            scores["APPLICATION"] += 0.40
+
+        if login_match:
+            scores["LOGIN"] += 0.65
+        if self._extract_login_url(full_text):
+            scores["LOGIN"] += 0.35
+
+        if has_record_id:
+            scores["RECORD"] += 0.85
+        elif has_specific_record:
+            scores["RECORD"] += 0.45
+
+        if object_match:
+            scores["OBJECT"] += 0.70
+        elif found_objects and not has_specific_record:
+            scores["OBJECT"] += 0.25
+
+        # Vague description penalty / distribution
+        is_vague_symptom = ("can't access salesforce at all" in full_text_lower or "cannot access salesforce at all" in full_text_lower) and not (
+            login_match or object_match or has_specific_record or dedicated_app_match
+        )
+        if is_vague_symptom:
+            scores["LOGIN"] = 0.55
+            scores["APPLICATION"] = 0.28
+            scores["OBJECT"] = 0.10
+            scores["RECORD"] = 0.07
+
+        total_score = sum(scores.values())
+        domain_confidences = {k: round(v / total_score, 2) for k, v in scores.items()}
+        # Normalize sum exactly to 1.0
+        diff = round(1.0 - sum(domain_confidences.values()), 2)
+        top_k = max(domain_confidences.items(), key=lambda kv: kv[1])[0]
+        domain_confidences[top_k] = round(domain_confidences[top_k] + diff, 2)
+
+        sorted_conf = sorted(domain_confidences.items(), key=lambda kv: kv[1], reverse=True)
+        top_conf = sorted_conf[0][1]
+        second_conf = sorted_conf[1][1]
+
+        # Determine ambiguity state
+        if is_vague_symptom or (top_conf < 0.80 and second_conf >= 0.20):
+            is_ambiguous = True
+        else:
+            is_ambiguous = False
+
         return {
             "domain": domain,
             "is_ambiguous": is_ambiguous,
@@ -620,6 +680,8 @@ class TriageAgent:
             "login_url": login_url,
             "objects": found_objects,
             "resolution_source": resolution_source,
+            "domain_confidences": domain_confidences,
+            "confidence": top_conf,
             "reasoning": f"{reasoning_domain} {reasoning_user}" + (f" Extracted login URL: '{login_url}'." if login_url else ""),
         }
 

@@ -1816,8 +1816,17 @@ class StructuredDiagnosisFlow:
             return val, {"IsCongaIssue": val}, cmp_info
 
         elif condition_key == "is_cc360_ps_assigned":
-            assigned = state_vars.get("permission_sets", [])
-            val = any("cc360" in ps.lower() or "customer 360" in ps.lower() or "customer360" in ps.lower() for ps in assigned)
+            # Ineligibility Prerequisite Gate: CC360 Community User is strictly for external portal users
+            user_obj = cache.get("User") or state_vars.get("user_details") or {}
+            contact_id = user_obj.get("ContactId")
+            user_type = str(user_obj.get("UserType", "")).lower()
+            is_portal_user = bool(contact_id) or user_obj.get("IsPortalEnabled", False) or "portal" in user_type or "community" in user_type
+            if not is_portal_user and not any("cc360" in full_text for _ in [0]):
+                # Internal workforce user on non-CC360 ticket: Disqualified from CC360 Community User permission set issue
+                val = True
+            else:
+                assigned = state_vars.get("permission_sets", [])
+                val = any("cc360" in ps.lower() or "customer 360" in ps.lower() or "customer360" in ps.lower() for ps in assigned)
             cmp_info = {
                 "decision_point": "Is CC360 Permission Set Assigned?",
                 "rule_evaluated": "Check if CC360 Permission Set is assigned in PermissionSetAssignment",
@@ -1831,8 +1840,17 @@ class StructuredDiagnosisFlow:
             return val, {"CC360_PS_Assigned": val, "PermissionSets": assigned}, cmp_info
 
         elif condition_key == "is_community_ps_assigned":
-            assigned = state_vars.get("permission_sets", [])
-            val = any("only ps community user" in ps.lower() or "community user" in ps.lower() or "cmty-ps" in ps.lower() for ps in assigned)
+            # Ineligibility Prerequisite Gate: Cmty-PS Community User is strictly for external portal users
+            user_obj = cache.get("User") or state_vars.get("user_details") or {}
+            contact_id = user_obj.get("ContactId")
+            user_type = str(user_obj.get("UserType", "")).lower()
+            is_portal_user = bool(contact_id) or user_obj.get("IsPortalEnabled", False) or "portal" in user_type or "community" in user_type
+            if not is_portal_user and not any("pharm" in full_text for _ in [0]):
+                # Internal workforce user on non-Pharma ticket: Disqualified from Cmty-PS permission set issue
+                val = True
+            else:
+                assigned = state_vars.get("permission_sets", [])
+                val = any("only ps community user" in ps.lower() or "community user" in ps.lower() or "cmty-ps" in ps.lower() for ps in assigned)
             cmp_info = {
                 "decision_point": "Is Only PS Community User Permission Set Assigned?",
                 "rule_evaluated": "Check if Only PS Community User permission set is assigned",

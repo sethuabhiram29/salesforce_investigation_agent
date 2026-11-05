@@ -233,5 +233,49 @@ class TestTriageAgent(unittest.TestCase):
         self.assertEqual(res.get("triage_result", {}).get("login_url"), "https://old-portal.invalid.com/login")
 
 
+    @patch("app.agents.triage.agent.fetch_historical_context_for_state")
+    def test_domain_confidence_distribution_clear_ticket(self, mock_history):
+        mock_history.return_value = []
+        state: InvestigationState = {
+            "incident": {
+                "incident_id": "INC110",
+                "short_description": "Single sign on error",
+                "description": "User jane.doe@acme.corp cannot sign into Salesforce using Okta SAML SSO login gateway.",
+                "caller_email": "jane.doe@acme.corp",
+            }
+        }
+        res = self.agent.run(state)
+        triage = res.get("triage_result", {})
+        self.assertEqual(triage.get("domain"), "LOGIN")
+        self.assertFalse(triage.get("is_ambiguous"))
+        confidences = triage.get("domain_confidences", {})
+        self.assertGreaterEqual(confidences.get("LOGIN", 0), 0.75)
+        self.assertLess(confidences.get("APPLICATION", 0), 0.20)
+        self.assertLess(confidences.get("OBJECT", 0), 0.20)
+        self.assertLess(confidences.get("RECORD", 0), 0.20)
+
+    @patch("app.agents.triage.agent.fetch_historical_context_for_state")
+    def test_domain_confidence_distribution_ambiguous_ticket(self, mock_history):
+        mock_history.return_value = []
+        state: InvestigationState = {
+            "incident": {
+                "incident_id": "INC111",
+                "short_description": "Access issue",
+                "description": "User jane.doe@acme.corp cannot access salesforce at all. Please investigate.",
+                "caller_email": "jane.doe@acme.corp",
+            }
+        }
+        res = self.agent.run(state)
+        triage = res.get("triage_result", {})
+        self.assertEqual(triage.get("domain"), "LOGIN")
+        self.assertTrue(triage.get("is_ambiguous"))
+        confidences = triage.get("domain_confidences", {})
+        self.assertGreaterEqual(confidences.get("LOGIN", 0), 0.40)
+        self.assertGreaterEqual(confidences.get("APPLICATION", 0), 0.20)
+        # Low confidence domains < 20%
+        self.assertLess(confidences.get("OBJECT", 0), 0.20)
+        self.assertLess(confidences.get("RECORD", 0), 0.20)
+
+
 if __name__ == "__main__":
     unittest.main()

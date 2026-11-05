@@ -39,6 +39,7 @@ class TriageResult(BaseModel):
     extracted_entities: Dict[str, Any] = Field(default_factory=dict)
     login_url: Optional[str] = None
     confidence: float = 1.0
+    domain_confidences: Dict[str, float] = Field(default_factory=dict)
     reasoning: str = ""
 
 
