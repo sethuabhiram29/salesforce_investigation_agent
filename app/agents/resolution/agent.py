@@ -262,10 +262,98 @@ class ResolutionAgent:
             pass
 
         exec_issue_code = plan.get("issue_code") or state.get("skill_refs", {}).get("issue_code", "UNKNOWN")
-        is_guidance = (action.get("action_type") == "COMMUNICATION_GUIDANCE" or field_name in ["SetupGuide", "Guidance", "Documentation", "Communication", "RITMGuidance"])
-        tool_name = "deliver_resolution_guidance" if is_guidance else "salesforce_update_user"
+        inc_id = state.get("incident", {}).get("incident_id", "UNKNOWN")
+        from app.tools.service_now import (
+            servicenow_reroute_incident,
+            servicenow_record_ritm_guidance,
+            servicenow_add_work_notes,
+        )
 
-        if is_guidance:
+        is_reroute = (
+            exec_issue_code in ["LOGIN-1", "LOGIN-001", "LOGIN-1B", "LOGIN-001B"]
+            or "reroute" in str(proposed_value).lower()
+            or "hcl service desk" in str(proposed_value).lower()
+        )
+        is_ritm = (
+            field_name == "RITMGuidance"
+            or "ritm" in str(proposed_value).lower()
+            or action.get("action_type") == "RITM"
+        )
+        is_guidance = (
+            action.get("action_type") == "COMMUNICATION_GUIDANCE"
+            or field_name in ["SetupGuide", "Guidance", "Documentation", "Communication", "RITMGuidance"]
+        )
+
+        if is_reroute:
+            tool_name = "servicenow_reroute_incident"
+            target_group = (
+                "HCL Service Desk"
+                if ("hcl" in str(proposed_value).lower() or exec_issue_code in ["LOGIN-1", "LOGIN-001"])
+                else "Salesforce Regional Support"
+            )
+            why_called = (
+                f"Human operator approved resolution proposal (Approval ID: {approval.get('approval_id')}). "
+                f"Invoking {tool_name} to formally reroute incident {inc_id} to '{target_group}' per SOP {exec_issue_code}."
+            )
+            exec_decision_basis = why_called
+            exec_next_step = (
+                "Advancing to State Verification. Confirming that incident reroute and work notes were successfully recorded."
+            )
+            tool_res = servicenow_reroute_incident(
+                incident_id=inc_id,
+                assignment_group=target_group,
+                notes=str(proposed_value),
+                agent_name="ResolutionAgent",
+            )
+            tool_result = {
+                "success": True,
+                "tool_name": tool_name,
+                "assignment_group": target_group,
+                "result": tool_res,
+                "message": f"Successfully rerouted incident to {target_group}",
+            }
+            step_detail = f"Invoked {tool_name} to reroute ticket {inc_id} to '{target_group}'."
+
+        elif is_ritm:
+            tool_name = "servicenow_record_ritm_guidance"
+            if exec_issue_code in ["LOGIN-3A", "LOGIN-003A"]:
+                ritm_type = "Manage User - Account Reactivation"
+            elif exec_issue_code in ["LOGIN-5", "LOGIN-005"]:
+                ritm_type = "Manage User - Federation ID Correction"
+            elif exec_issue_code.startswith("APP-"):
+                ritm_type = "Manage User - Application Permission Set Assignment"
+            elif exec_issue_code.startswith("OBJECT-"):
+                ritm_type = "Manage User - Object/Field Permission Set Assignment"
+            elif exec_issue_code.startswith("RECORD-"):
+                ritm_type = "Manage User - Record Access / Permission Set Assignment"
+            else:
+                ritm_type = "Manage User Access RITM"
+
+            why_called = (
+                f"Human operator approved resolution proposal (Approval ID: {approval.get('approval_id')}). "
+                f"Invoking {tool_name} to formally record RITM catalog requirement ('{ritm_type}') on incident {inc_id}."
+            )
+            exec_decision_basis = why_called
+            exec_next_step = (
+                "Advancing to State Verification. Confirming that RITM requirement was recorded in ticket work notes."
+            )
+            tool_res = servicenow_record_ritm_guidance(
+                incident_id=inc_id,
+                ritm_type=ritm_type,
+                notes=str(proposed_value),
+                agent_name="ResolutionAgent",
+            )
+            tool_result = {
+                "success": True,
+                "tool_name": tool_name,
+                "ritm_type": ritm_type,
+                "result": tool_res,
+                "message": f"Successfully recorded {ritm_type} requirement on incident {inc_id}",
+            }
+            step_detail = f"Invoked {tool_name} to formally record RITM requirement ({ritm_type}) on incident {inc_id}."
+
+        elif is_guidance:
+            tool_name = "servicenow_add_work_notes"
             why_called = (
                 f"Human operator approved resolution proposal (Approval ID: {approval.get('approval_id')}). "
                 f"Under canonical SOP safety policies for {exec_issue_code}, direct Salesforce write is prohibited; "
@@ -273,17 +361,25 @@ class ResolutionAgent:
             )
             exec_decision_basis = why_called
             exec_next_step = (
-                "Advancing to State Verification. Confirming that resolution guidance was recorded "
-                "and safety policy verified."
+                "Advancing to State Verification. Confirming that resolution guidance was recorded in ticket work notes."
+            )
+            tool_res = servicenow_add_work_notes(
+                incident_id=inc_id,
+                notes=str(proposed_value),
+                stage="resolution",
+                agent_name="ResolutionAgent",
             )
             tool_result = {
                 "success": True,
                 "tool_name": tool_name,
                 "field": field_name,
+                "result": tool_res,
                 "message": f"Successfully delivered resolution guidance to requester: {proposed_value}",
             }
-            step_detail = f"Invoked {tool_name} to transmit {field_name} ('{proposed_value}') to requester without live Salesforce mutation."
+            step_detail = f"Invoked {tool_name} to transmit {field_name} ('{proposed_value}') to requester."
+
         else:
+            tool_name = "salesforce_update_user"
             why_called = (
                 f"Human operator approved remediation proposal (Approval ID: {approval.get('approval_id')}). "
                 f"Canonical SOP preconditions for {exec_issue_code} verified. "
@@ -350,7 +446,7 @@ class ResolutionAgent:
             }
 
         inc_id = state.get("incident", {}).get("incident_id")
-        if inc_id:
+        if inc_id and tool_name not in ["servicenow_reroute_incident", "servicenow_record_ritm_guidance"]:
             from app.tools.service_now import servicenow_add_work_notes
             servicenow_add_work_notes(
                 incident_id=inc_id,

@@ -171,7 +171,7 @@ class VerificationAgent:
         except (OSError, UnicodeEncodeError):
             pass
 
-        expected_is_active = False if (target_field == "RITMGuidance" or issue_code in ["LOGIN-1", "LOGIN-001", "LOGIN-1B", "LOGIN-001B"]) else True
+        expected_is_active = False if issue_code in ["LOGIN-3A", "LOGIN-003A", "LOGIN-1", "LOGIN-001", "LOGIN-1B", "LOGIN-001B"] else True
         result = VerificationResult(
             verified=verified,
             expected_state={target_field: expected_val, "IsActive": expected_is_active},

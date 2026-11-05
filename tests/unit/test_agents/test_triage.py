@@ -277,5 +277,55 @@ class TestTriageAgent(unittest.TestCase):
         self.assertLess(confidences.get("RECORD", 0), 0.20)
 
 
+    @patch("app.agents.triage.agent.fetch_historical_context_for_state")
+    def test_pir_domain_classification(self, mock_history):
+        mock_history.return_value = []
+        state: InvestigationState = {
+            "incident": {
+                "incident_id": "INC112",
+                "short_description": "User Not Able to Create PIR",
+                "description": "User sarah.connor@acme.corp cannot create PIR due to missing C2C training and Simplified PIR Permission Set.",
+                "caller_email": "sarah.connor@acme.corp",
+            }
+        }
+        res = self.agent.run(state)
+        triage = res.get("triage_result", {})
+        self.assertEqual(triage.get("domain"), "PIR")
+        self.assertFalse(triage.get("is_ambiguous"))
+
+    @patch("app.agents.triage.agent.fetch_historical_context_for_state")
+    def test_outlook_plugin_domain_classification(self, mock_history):
+        mock_history.return_value = []
+        state: InvestigationState = {
+            "incident": {
+                "incident_id": "INC113",
+                "short_description": "Salesforce Outlook Add-in Disabled",
+                "description": "User sarah.connor@acme.corp reports Salesforce Outlook Add-in is disabled and Einstein Activity Capture is not syncing.",
+                "caller_email": "sarah.connor@acme.corp",
+            }
+        }
+        res = self.agent.run(state)
+        triage = res.get("triage_result", {})
+        self.assertEqual(triage.get("domain"), "OUTLOOK_PLUGIN")
+        self.assertFalse(triage.get("is_ambiguous"))
+
+    @patch("app.agents.triage.agent.fetch_historical_context_for_state")
+    def test_unknown_domain_non_salesforce_scope(self, mock_history):
+        mock_history.return_value = []
+        state: InvestigationState = {
+            "incident": {
+                "incident_id": "INC114",
+                "short_description": "Office supplies request",
+                "description": "Printer on 3rd floor is out of paper and toner. Please replace.",
+                "caller_email": "jane.doe@acme.corp",
+            }
+        }
+        res = self.agent.run(state)
+        triage = res.get("triage_result", {})
+        self.assertEqual(triage.get("domain"), "UNKNOWN")
+        self.assertEqual(triage.get("confidence"), 0.0)
+        self.assertNotEqual(triage.get("domain"), "LOGIN")
+
+
 if __name__ == "__main__":
     unittest.main()

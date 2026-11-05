@@ -89,7 +89,7 @@ class TriageAgent:
         if not llm_output:
             llm_output = self._fallback_semantic_triage(summary, desc, caller_email, on_behalf_val)
 
-        domain = llm_output.get("domain", "LOGIN")
+        domain = (llm_output.get("domain") or "UNKNOWN").upper()
         is_ambiguous = bool(llm_output.get("is_ambiguous", False))
         affected_target = llm_output.get("affected_user_identifier")
         mirror_target = llm_output.get("mirror_user_identifier")
@@ -232,13 +232,24 @@ class TriageAgent:
             "user_is_active": user_obj.get("IsActive") if user_obj else None,
             "user_federation_id": user_obj.get("FederationIdentifier") if user_obj else None,
         }
-        triage_comparison = f"[MATCH] Narrative symptoms match '{domain}' domain classification with {resolution_source} resolution."
-        triage_decision_basis = (
+        if domain in ["PIR", "OUTLOOK_PLUGIN", "UNKNOWN"]:
+            triage_comparison = f"[ESCALATE] Domain '{domain}' requires direct human support or specialized queue handoff."
+        else:
+            triage_comparison = f"[MATCH] Narrative symptoms match '{domain}' domain classification with {resolution_source} resolution."
+        if domain in ["PIR", "OUTLOOK_PLUGIN", "UNKNOWN"]:
+            triage_decision_basis = (
+                f"Classified into '{domain}' domain based on ticket narrative keywords ('{summary}'). "
+                f"Automated root cause diagnosis workflows for '{domain}' are not active in this pipeline. "
+                f"Advancing immediately to escalation node without hallucinated diagnosis."
+            )
+            triage_next_step = f"Advancing to Escalation Node to route incident directly to human support."
+        else:
+            triage_decision_basis = (
             f"Classified into '{domain}' domain based on ticket narrative keywords ('{summary}'). "
             f"Affected user '{resolved_affected.get('Email') if resolved_affected else affected_target}' resolved uniquely in Salesforce (Id: {resolved_affected.get('Id') if resolved_affected else 'N/A'}). "
             f"User details pre-fetched into evidence cache to eliminate redundant MCP queries."
         )
-        triage_next_step = (
+            triage_next_step = (
             f"Advancing to Diagnosis Agent to evaluate candidate root causes in '{domain}' domain "
             f"top-to-bottom against observed Salesforce evidence without loading skill files."
         )
@@ -317,7 +328,7 @@ class TriageAgent:
                 llm_output["confidence"] = fb["confidence"]
 
         extracted_entities["login_url"] = extracted_login_url
-        conf_val = float(domain_confidences.get(domain, 0.7 if is_ambiguous else 0.95))
+        conf_val = 0.0 if domain == "UNKNOWN" else float(domain_confidences.get(domain, 0.7 if is_ambiguous else 0.95))
         triage_result = TriageResult(
             domain=domain,
             is_ambiguous=is_ambiguous,
@@ -408,7 +419,7 @@ class TriageAgent:
                 f"- Caller: {caller}\n"
                 f"- On Behalf Of: {on_behalf}\n\n"
                 f"Your task is to analyze the narrative and return a JSON object with:\n"
-                f"1. 'domain': One of 'LOGIN', 'OBJECT', 'RECORD', 'APPLICATION'.\n"
+                f"1. 'domain': One of 'LOGIN', 'OBJECT', 'RECORD', 'APPLICATION', 'OUTLOOK_PLUGIN', 'PIR', 'UNKNOWN'.\n"
                 f"2. 'is_ambiguous': boolean (true if vague like 'can't access Salesforce' without detail or multiple domains plausible).\n"
                 f"3. 'domain_confidences': A JSON object with decimal confidences summing to 1.0, e.g. {{'LOGIN': 0.65, 'APPLICATION': 0.28, 'OBJECT': 0.04, 'RECORD': 0.03}}.\n"
                 f"3. 'affected_user_identifier': The user experiencing the problem (email, username, or full name e.g. 'Daniel Ortiz', 'Priya Nair'). Priority 1: description -> Priority 2: on_behalf_of -> Priority 3: caller.\n"
@@ -554,11 +565,23 @@ class TriageAgent:
         # 3. Domain classification based on canonical symptom semantics
         app_cues = ["cc360", "pharm", "cmty-ps", "conga", "clm", "apttus", "x-author", "showpad", "appexchange", "connected app", "portal"]
         
+        # Outlook Add-in and Einstein Activity Capture indicators
+        outlook_cues = [
+            "outlook", "add-in", "addin", "einstein activity capture", "eac", 
+            "outlook plugin", "salesforce add-in", "salesforce outlook", "outlook integration"
+        ]
+
+        # PIR (Product Investigation Report) indicators
+        pir_cues = [
+            "pir", "simplified pir", "c2c", "c2c training", "pir tracking", 
+            "pir__c", "product investigation report", "pir record", "pir attachment"
+        ]
+
         # Record indicators: specific record IDs (15 or 18 chars like 006xx..., 001xx...), or row-level sharing cues
         has_record_id = bool(re.search(r"\b00[0-9a-zA-Z]{13,16}\b", full_text)) or "record 00" in full_text_lower
         row_level_cues = [
             "record id", "specific record", "individual record", "this record",
-            "report", "dashboard", "userrecordaccess", "sharing rule", 
+            "dashboard", "dashboards", "salesforce report", "report and dashboard", "reports and dashboard", "report folder", "dashboard folder", "report access", "dashboard access", "userrecordaccess", "sharing rule", 
             "public group", "queue", "folder sharing", "manual sharing", 
             "owd", "organization-wide defaults", "row-level"
         ]
@@ -573,29 +596,40 @@ class TriageAgent:
         
         # Login indicators: SSO, Federation, account active, lockout, MFA, auth
         login_cues = [
-            "login", "sign in", "sso", "saml", "okta", "azure", "federation", 
+            "login", "log in", "logon", "sign in", "sso", "saml", "okta", "azure", "federation", 
             "federationidentifier", "password", "authenticate", "deactivated", 
             "locked out", "wrong url", "mobile app", "medical leave", "returned from leave", "ciam"
         ]
 
         app_match = any(c in full_text_lower for c in app_cues)
+        outlook_match = any(c in full_text_lower for c in outlook_cues)
+        pir_match = any(c in full_text_lower for c in pir_cues)
         has_specific_record = has_record_id or any(c in full_text_lower for c in row_level_cues)
         object_match = any(c in full_text_lower for c in object_cues)
         login_match = any(c in full_text_lower for c in login_cues)
 
         is_ambiguous = False
-        domain = "LOGIN"
+        domain = "UNKNOWN"
 
         # Dedicated 3rd-party application packages vs general portal
         dedicated_app_match = any(ac in full_text_lower for ac in ["cc360", "pharm", "cmty-ps", "conga", "clm", "apttus", "x-author", "showpad", "appexchange"])
 
         # Deterministic hierarchy as per incident_classification.md
-        if ("can't access salesforce at all" in full_text_lower or "cannot access salesforce at all" in full_text_lower) and not (
-            login_match or object_match or has_specific_record or dedicated_app_match
-        ):
+        is_vague_symptom = (
+            ("can't access salesforce" in full_text_lower or "cannot access salesforce" in full_text_lower or "access issue" in full_text_lower)
+            and not (login_match or object_match or has_specific_record or dedicated_app_match or outlook_match or pir_match)
+        )
+
+        if pir_match:
+            domain = "PIR"
+            reasoning_domain = "Matched Product Investigation Report (PIR) symptoms (C2C training, Simplified PIR permission, or PIR attachment size)."
+        elif outlook_match:
+            domain = "OUTLOOK_PLUGIN"
+            reasoning_domain = "Matched Salesforce Outlook Add-in / Einstein Activity Capture (EAC) symptoms."
+        elif is_vague_symptom:
             domain = "LOGIN"
             is_ambiguous = True
-            reasoning_domain = "Vague description ('can't access salesforce at all'); flagged as ambiguous."
+            reasoning_domain = "Vague description ('can't access salesforce'); flagged as ambiguous."
         elif dedicated_app_match and not login_match:
             domain = "APPLICATION"
             reasoning_domain = "Matched dedicated connected application (CC360, Pharm, Conga, Showpad)."
@@ -611,10 +645,14 @@ class TriageAgent:
         elif app_match:
             domain = "APPLICATION"
             reasoning_domain = "Matched connected application or portal symptom."
-        else:
+        elif "salesforce" in full_text_lower or "sfdc" in full_text_lower:
             domain = "LOGIN"
             is_ambiguous = True
-            reasoning_domain = "Unspecified incident scope defaulted to LOGIN with ambiguity flag."
+            reasoning_domain = "Generic Salesforce reference with no specific symptom; flagged as ambiguous."
+        else:
+            domain = "UNKNOWN"
+            is_ambiguous = False
+            reasoning_domain = "Ticket narrative symptoms do not match any recognized Salesforce domain. Halting triage to prevent hallucination."
 
         # Extract objects
         standard_objects = ["Account", "Contact", "Opportunity", "Lead", "Case", "WorkOrder", "Report", "Dashboard"]
@@ -623,54 +661,74 @@ class TriageAgent:
         login_url = self._extract_login_url(full_text)
 
         # Compute normalized multi-domain confidence distribution
-        scores = {"LOGIN": 0.02, "APPLICATION": 0.02, "OBJECT": 0.02, "RECORD": 0.02}
-
-        if dedicated_app_match:
-            scores["APPLICATION"] += 0.80
-        elif app_match:
-            scores["APPLICATION"] += 0.40
-
-        if login_match:
-            scores["LOGIN"] += 0.65
-        if self._extract_login_url(full_text):
-            scores["LOGIN"] += 0.35
-
-        if has_record_id:
-            scores["RECORD"] += 0.85
-        elif has_specific_record:
-            scores["RECORD"] += 0.45
-
-        if object_match:
-            scores["OBJECT"] += 0.70
-        elif found_objects and not has_specific_record:
-            scores["OBJECT"] += 0.25
-
-        # Vague description penalty / distribution
-        is_vague_symptom = ("can't access salesforce at all" in full_text_lower or "cannot access salesforce at all" in full_text_lower) and not (
-            login_match or object_match or has_specific_record or dedicated_app_match
-        )
-        if is_vague_symptom:
-            scores["LOGIN"] = 0.55
-            scores["APPLICATION"] = 0.28
-            scores["OBJECT"] = 0.10
-            scores["RECORD"] = 0.07
-
-        total_score = sum(scores.values())
-        domain_confidences = {k: round(v / total_score, 2) for k, v in scores.items()}
-        # Normalize sum exactly to 1.0
-        diff = round(1.0 - sum(domain_confidences.values()), 2)
-        top_k = max(domain_confidences.items(), key=lambda kv: kv[1])[0]
-        domain_confidences[top_k] = round(domain_confidences[top_k] + diff, 2)
-
-        sorted_conf = sorted(domain_confidences.items(), key=lambda kv: kv[1], reverse=True)
-        top_conf = sorted_conf[0][1]
-        second_conf = sorted_conf[1][1]
-
-        # Determine ambiguity state
-        if is_vague_symptom or (top_conf < 0.80 and second_conf >= 0.20):
-            is_ambiguous = True
-        else:
+        if domain == "UNKNOWN":
+            domain_confidences = {
+                "UNKNOWN": 1.0,
+                "LOGIN": 0.0,
+                "APPLICATION": 0.0,
+                "OBJECT": 0.0,
+                "RECORD": 0.0,
+                "OUTLOOK_PLUGIN": 0.0,
+                "PIR": 0.0,
+            }
+            top_conf = 0.0
             is_ambiguous = False
+        else:
+            scores = {
+                "LOGIN": 0.01,
+                "APPLICATION": 0.01,
+                "OBJECT": 0.01,
+                "RECORD": 0.01,
+                "OUTLOOK_PLUGIN": 0.01,
+                "PIR": 0.01,
+            }
+
+            if pir_match:
+                scores["PIR"] += 0.90
+            if outlook_match:
+                scores["OUTLOOK_PLUGIN"] += 0.90
+            if dedicated_app_match:
+                scores["APPLICATION"] += 0.80
+            elif app_match:
+                scores["APPLICATION"] += 0.40
+
+            if login_match:
+                scores["LOGIN"] += 0.65
+            if self._extract_login_url(full_text):
+                scores["LOGIN"] += 0.35
+
+            if has_record_id:
+                scores["RECORD"] += 0.85
+            elif has_specific_record:
+                scores["RECORD"] += 0.45
+
+            if object_match:
+                scores["OBJECT"] += 0.70
+            elif found_objects and not has_specific_record:
+                scores["OBJECT"] += 0.25
+
+            if is_vague_symptom:
+                scores["LOGIN"] = 0.55
+                scores["APPLICATION"] = 0.28
+                scores["OBJECT"] = 0.10
+                scores["RECORD"] = 0.07
+
+            total_score = sum(scores.values())
+            domain_confidences = {k: round(v / total_score, 2) for k, v in scores.items()}
+            # Normalize sum exactly to 1.0
+            diff = round(1.0 - sum(domain_confidences.values()), 2)
+            top_k = max(domain_confidences.items(), key=lambda kv: kv[1])[0]
+            domain_confidences[top_k] = round(domain_confidences[top_k] + diff, 2)
+
+            sorted_conf = sorted(domain_confidences.items(), key=lambda kv: kv[1], reverse=True)
+            top_conf = sorted_conf[0][1]
+            second_conf = sorted_conf[1][1] if len(sorted_conf) > 1 else 0.0
+
+            # Determine ambiguity state
+            if is_vague_symptom or (domain not in ["PIR", "OUTLOOK_PLUGIN", "UNKNOWN"] and top_conf < 0.80 and second_conf >= 0.20):
+                is_ambiguous = True
+            else:
+                is_ambiguous = False
 
         return {
             "domain": domain,
@@ -681,7 +739,7 @@ class TriageAgent:
             "objects": found_objects,
             "resolution_source": resolution_source,
             "domain_confidences": domain_confidences,
-            "confidence": top_conf,
+            "confidence": 0.0 if domain == "UNKNOWN" else top_conf,
             "reasoning": f"{reasoning_domain} {reasoning_user}" + (f" Extracted login URL: '{login_url}'." if login_url else ""),
         }
 

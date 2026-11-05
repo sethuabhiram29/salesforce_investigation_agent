@@ -34,7 +34,7 @@ class IncidentData(BaseModel):
 
 class TriageResult(BaseModel):
     """Classification output from Triage Agent."""
-    domain: Literal["LOGIN", "APPLICATION", "RECORD", "OBJECT"]
+    domain: Literal["LOGIN", "APPLICATION", "RECORD", "OBJECT", "PIR", "OUTLOOK_PLUGIN", "UNKNOWN"]
     is_ambiguous: bool = False
     extracted_entities: Dict[str, Any] = Field(default_factory=dict)
     login_url: Optional[str] = None

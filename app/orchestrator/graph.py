@@ -78,7 +78,28 @@ def node_escalation(state: InvestigationState) -> InvestigationState:
     logger.info("LangGraph: Entering Escalation Node")
     incident_id = state.get("incident", {}).get("incident_id", "UNKNOWN")
     diag = state.get("diagnosis_result") or {}
-    reason = diag.get("status") or state.get("triage_result", {}).get("reasoning", "Escalated to human support")
+    triage = state.get("triage_result") or {}
+    domain = (triage.get("domain") or "").upper()
+
+    if domain == "PIR":
+        reason = (
+            "Incident classified into domain 'PIR' (Product Investigation Report). "
+            "Automated investigation and resolution workflows for PIR domain are pending implementation. "
+            "Escalating incident to dedicated Salesforce / HCL training verification queue."
+        )
+    elif domain == "OUTLOOK_PLUGIN":
+        reason = (
+            "Incident classified into domain 'OUTLOOK_PLUGIN' (Salesforce Outlook Add-in). "
+            "Automated investigation and resolution workflows for Outlook Plugin domain are pending implementation. "
+            "Escalating incident to desktop integration support."
+        )
+    elif domain == "UNKNOWN":
+        reason = (
+            "Incident symptoms could not be classified into any recognized Salesforce domain with sufficient confidence (Domain: UNKNOWN). "
+            "Investigation halted to prevent hallucinated diagnosis. Escalating directly to human support."
+        )
+    else:
+        reason = diag.get("status") or triage.get("reasoning", "Escalated to human support")
 
     servicenow_add_work_notes(incident_id, f"Auto-escalated to Tier-2: {reason}")
     state["servicenow_update"] = {"incident_id": incident_id, "state": "Escalated", "reason": reason}
@@ -88,7 +109,7 @@ def node_escalation(state: InvestigationState) -> InvestigationState:
         "stage": "escalation",
         "agent_name": "Orchestrator",
         "action": f"Escalated incident {incident_id} to Tier-2",
-        "details": {"reason": reason},
+        "details": {"domain": domain, "reason": reason},
     })
     return state
 
@@ -97,7 +118,9 @@ def node_escalation(state: InvestigationState) -> InvestigationState:
 
 def route_after_triage(state: InvestigationState) -> Literal["diagnosis", "escalation"]:
     triage = state.get("triage_result") or {}
-    if not triage.get("domain"):
+    domain = (triage.get("domain") or "").upper()
+    if not domain or domain in ["UNKNOWN", "PIR", "OUTLOOK_PLUGIN"]:
+        logger.info("LangGraph: Routing after triage directly to escalation for domain '%s'", domain)
         return "escalation"
     # Route to diagnosis so the Diagnosis Agent can traverse the Knowledge Graph!
     # Even when is_ambiguous is True, the Diagnosis Agent executes confidence-ranked

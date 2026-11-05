@@ -72,5 +72,45 @@ class TestOuterGraph(unittest.TestCase):
         self.assertNotIn("resolution_plan", final_state)
 
 
+    def test_pir_incident_escalates_immediately_without_diagnosis(self):
+        incident = {
+            "incident_id": "INC_TEST_PIR",
+            "short_description": "User cannot create PIR",
+            "description": "User sarah.connor@acme.corp cannot submit PIR. Simplified PIR permission set missing.",
+            "caller_email": "sarah.connor@acme.corp",
+        }
+        final_state = self.orchestrator.run_investigation(incident)
+        self.assertEqual(final_state["triage_result"]["domain"], "PIR")
+        self.assertEqual(final_state["servicenow_update"]["state"], "Escalated")
+        self.assertIn("PIR", final_state["servicenow_update"]["reason"])
+        self.assertNotIn("diagnosis_result", final_state)
+
+    def test_outlook_plugin_incident_escalates_immediately_without_diagnosis(self):
+        incident = {
+            "incident_id": "INC_TEST_OUTLOOK",
+            "short_description": "Salesforce Outlook plugin disabled",
+            "description": "User sarah.connor@acme.corp reports Outlook add-in is disabled.",
+            "caller_email": "sarah.connor@acme.corp",
+        }
+        final_state = self.orchestrator.run_investigation(incident)
+        self.assertEqual(final_state["triage_result"]["domain"], "OUTLOOK_PLUGIN")
+        self.assertEqual(final_state["servicenow_update"]["state"], "Escalated")
+        self.assertIn("OUTLOOK_PLUGIN", final_state["servicenow_update"]["reason"])
+        self.assertNotIn("diagnosis_result", final_state)
+
+    def test_unknown_incident_escalates_immediately_without_diagnosis(self):
+        incident = {
+            "incident_id": "INC_TEST_UNKNOWN",
+            "short_description": "Printer out of toner",
+            "description": "Printer in finance department is broken.",
+            "caller_email": "jane.doe@acme.corp",
+        }
+        final_state = self.orchestrator.run_investigation(incident)
+        self.assertEqual(final_state["triage_result"]["domain"], "UNKNOWN")
+        self.assertEqual(final_state["servicenow_update"]["state"], "Escalated")
+        self.assertIn("UNKNOWN", final_state["servicenow_update"]["reason"])
+        self.assertNotIn("diagnosis_result", final_state)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -7,7 +7,7 @@ purpose: Contextual triage, domain classification, affected user resolution, mir
 # Purpose
 This skill guides the Triage Agent in:
 1. Contextually understanding the natural language narrative of ServiceNow support incidents.
-2. Classifying incidents into one of four investigation domains: **LOGIN**, **OBJECT**, **RECORD**, or **APPLICATION** based on symptom semantics (without premature remediation).
+2. Classifying incidents into one of the investigation domains: **LOGIN**, **OBJECT**, **RECORD**, **APPLICATION**, **OUTLOOK_PLUGIN**, **PIR**, or **UNKNOWN** based on symptom semantics (without premature remediation or hallucination).
 3. Dynamically identifying the **Affected User** based on sentence context and narrative roles, rather than assuming the ticket caller is the affected party.
 4. Dynamically extracting any **Mirror User** (benchmark/comparison peer) referenced in the ticket to enable differential access analysis.
 5. Dynamically extracting any **Login URL / Endpoint** cited in the narrative to anchor Swimlane 1 ("Wrong Login Url") and cross-organization user verification.
@@ -54,6 +54,30 @@ Analyze the symptom reported by the user, the stage of their interaction with Sa
   - Pharmacy System (Pharm) portal access.
   - Conga CLM / Apttus contract lifecycle management or X-Author Excel add-in.
   - Showpad collateral management.
+
+### E. OUTLOOK_PLUGIN Domain
+- **Core Semantic Question**: Is the issue related to the Salesforce Outlook Add-in, Einstein Activity Capture (EAC), or email/calendar synchronization?
+- **Symptom Scope**: Desktop Outlook integration client.
+- **Key Indicators**:
+  - Salesforce Outlook Add-in disabled or fails to load.
+  - Einstein Activity Capture (EAC) permissions missing or not syncing calendar/emails.
+  - Outlook plugin installation corruption requiring add-in re-enabling or reinstallation.
+  - User-specific Outlook or Salesforce integration setting discrepancies.
+- **Handling Policy**: Automated resolution workflows for OUTLOOK_PLUGIN are pending development. Triage must classify as OUTLOOK_PLUGIN and immediately escalate to human support.
+
+### F. PIR Domain (Product Investigation Report / Problem Incident Report)
+- **Core Semantic Question**: Is the user blocked from creating, submitting, or attaching files to a PIR record (PIR__c)?
+- **Symptom Scope**: Simplified PIR application workflow.
+- **Key Indicators**:
+  - Cannot create PIR due to missing mandatory C2C training or Simplified PIR Permission Set.
+  - Cannot submit PIR because attachment exceeds file size limit (> 5 MB / 10 MB).
+  - PIR Tracking Number lookup, PIR__c record, ContentDocumentLink, or ContentVersion file errors.
+- **Handling Policy**: Automated resolution workflows for PIR are pending development. Triage must classify as PIR and immediately escalate to human support / dedicated training verification queue.
+
+### G. UNKNOWN Domain / Out-of-Scope
+- **Core Semantic Question**: Does the narrative fail to match any recognized Salesforce investigation domain, or describe a completely unrelated system?
+- **Symptom Scope**: Unrecognized, out-of-scope, or completely ungrounded ticket.
+- **Key Rule**: **DO NOT HALLUCINATE OR DEFAULT TO LOGIN**. If the symptoms do not match any recognized Salesforce domain, classify as **UNKNOWN** so the orchestrator can immediately escalate without performing speculative checks.
 
 ---
 
