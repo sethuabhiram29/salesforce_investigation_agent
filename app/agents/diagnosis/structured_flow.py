@@ -10,6 +10,7 @@ and navigates the graph until a TerminalNode is reached.
 
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional, Tuple
 import uuid
 
@@ -215,6 +216,20 @@ class StructuredDiagnosisFlow:
         mirror_user = ctx.get("mirror_user") or cache.get("User:mirror")
         domain = ctx.get("domain", "LOGIN")
 
+        rec_ids = (
+            ctx.get("record_ids")
+            or (ctx.get("extracted_entities", {}).get("record_ids") if isinstance(ctx.get("extracted_entities"), dict) else None)
+            or ctx.get("target_record_id")
+            or ctx.get("record_id")
+        )
+        if isinstance(rec_ids, list) and rec_ids:
+            record_id = str(rec_ids[0])
+        elif rec_ids:
+            record_id = str(rec_ids)
+        else:
+            m_rec = re.search(r"\b00[0-9a-zA-Z]{13,16}\b", full_text)
+            record_id = m_rec.group(0) if m_rec else None
+
         # 1. Retrieve Root Node from Neo4j Knowledge Graph
         start_node = neo4j_repository.get_flowchart_start_node(domain)
         graph_source = start_node.get("source", "neo4j")
@@ -261,6 +276,7 @@ class StructuredDiagnosisFlow:
             "incident_id": incident_id,
             "target_identifier": target_identifier,
             "affected_user_id": affected_user_id,
+            "record_id": record_id,
             "login_url": login_url,
             "is_valid_url": True,
             "domain": domain,

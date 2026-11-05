@@ -128,9 +128,10 @@ class TestDiagnosisAgent(unittest.TestCase):
         self.assertEqual(missing_diag.get("recommended_action"), "escalate")
 
     def test_cross_domain_fallback_for_vague_ticket(self):
-        # Sarah Connor has general "Cannot access salesforce" ticket.
-        # She is active and has FederationIdentifier (contradicting LOGIN domain),
-        # but she lacks Edit permissions on Account.
+        # Sarah Connor has general "Cannot access salesforce" ticket in LOGIN domain.
+        # She is active and has FederationIdentifier (all automated LOGIN checks pass, reaching Out of Scope).
+        # Under strict domain isolation, the diagnosis must terminate at escalation_required / OUT-OF-SCOPE,
+        # and NEVER leak across into unrelated domains (e.g. OBJECT, RECORD, or APPLICATION).
         state: InvestigationState = {
             "incident": {
                 "incident_id": "INC1005",
@@ -150,10 +151,10 @@ class TestDiagnosisAgent(unittest.TestCase):
         updated_state = self.agent.run(state)
         diag = updated_state.get("diagnosis_result", {})
 
-        # Should fall back from LOGIN to OBJECT and confirm OBJECT-1!
-        self.assertEqual(diag.get("status"), "confirmed")
-        self.assertIn(diag.get("issue_code"), ["OBJECT-1", "OBJECT-2"])
-        self.assertEqual(diag.get("recommended_action"), "resolution")
+        # Must strictly stay in LOGIN domain and escalate to Tier-2
+        self.assertEqual(diag.get("status"), "escalation_required")
+        self.assertEqual(diag.get("issue_code"), "OUT-OF-SCOPE")
+        self.assertEqual(diag.get("recommended_action"), "escalate")
 
     def test_record_level_access_diagnosis(self):
         # Sarah Connor cannot access specific Opportunity 006xx000001OPP
