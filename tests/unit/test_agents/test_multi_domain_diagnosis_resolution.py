@@ -194,7 +194,7 @@ class TestMultiDomainDiagnosisResolution(unittest.TestCase):
         self.assertEqual(action.get("target_field"), "Guidance")
         self.assertIn("Folder", action.get("proposed_value", ""))
         skill_ref = res_state.get("skill_refs", {})
-        self.assertIn("RECORD-1-report-folder-access.md", skill_ref.get("file_path", ""))
+        self.assertTrue("RECORD-1B-report-folder-access.md" in skill_ref.get("file_path", "") or "RECORD-1-report-folder-access.md" in skill_ref.get("file_path", ""))
 
     def test_record_opp_case_sharing_diagnosis_and_resolution(self):
         """Test RECORD domain: Opportunity record sharing missing."""
@@ -238,7 +238,7 @@ class TestMultiDomainDiagnosisResolution(unittest.TestCase):
         self.assertEqual(action.get("target_field"), "Guidance")
         self.assertIn("Opportunity Team", action.get("proposed_value", ""))
         skill_ref = res_state.get("skill_refs", {})
-        self.assertIn("RECORD-2-opp-case-sharing.md", skill_ref.get("file_path", ""))
+        self.assertTrue("RECORD-2B-opp-case-sharing.md" in skill_ref.get("file_path", "") or "RECORD-2-opp-case-sharing.md" in skill_ref.get("file_path", ""))
 
 
 if __name__ == "__main__":

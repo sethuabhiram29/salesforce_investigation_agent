@@ -646,87 +646,149 @@ class ResolutionAgent:
                 "Agreement - Apttus Permission Set Not Assigned",
             ]
 
-        # Object Domain Scenarios
-        elif issue_code in ["OBJECT-1", "OBJECT-001", "OBJECT-WIZARD-COUNTRY-BLANK"] or "wizard" in issue_code.lower():
+        # Object Domain Scenarios (Object-1, Object-2A, Object-2B, Object-3)
+        elif issue_code in ["OBJECT-1", "OBJECT-001", "OBJECT-3", "OBJECT-003", "OBJECT-WIZARD-COUNTRY-BLANK"] or "wizard" in issue_code.lower():
             target_field = "WizardCountry"
-            user_country = affected_user.get("Country") or affected_user.get("CountryCode") or "US"
-            proposed_value = str(user_country)
-            justification = f"Dynamically derived from SOP OBJECT-1: Populate missing WizardCountry ('{proposed_value}') on Contact to restore Wizard App and product search access."
+            # In Object-1 & Object-3: Obtain mirror user from same region/department to populate valid Wizard_Country__c
+            mirror_country = (
+                diagnosis.get("observed_values", {}).get("MirrorWizardCountry")
+                or affected_user.get("MirrorCountry")
+                or affected_user.get("Country")
+                or affected_user.get("CountryCode")
+                or "US"
+            )
+            proposed_value = str(mirror_country)
+            justification = (
+                f"Per SOP Object-1 / Object-3: Contact.Wizard_Country__c is blank or unpopulated. "
+                f"Update Contact.Wizard_Country__c with confirmed mirror user baseline value ('{proposed_value}') "
+                f"to restore Wizard Application and Product Search access."
+            )
             preconditions = [
                 "User exists in NA Org",
                 "User.IsActive == True",
-                "Contact.Wizard_Country__c IS NULL or Blank",
+                "Contact.Wizard_Country__c IS NULL OR Blank",
             ]
 
-        elif issue_code in ["OBJECT-2", "OBJECT-002", "OBJECT-ACCESS-MISSING"]:
+        elif issue_code in ["OBJECT-2A", "OBJECT-2", "OBJECT-002", "OBJECT-ACCESS-MISSING"]:
             target_field = "RITMGuidance"
-            proposed_value = "Submit Manage User Access request for Object CRUD Permission Set assignment. Route to TCS-America-SFDC."
-            justification = "Per SOP OBJECT-2: User lacks required Object CRUD permissions."
+            proposed_value = "Submit Manage User Access RITM for required Object CRUD Permission Set assignment per mirror user comparison."
+            justification = (
+                "Per SOP Object-2A: User lacks required Object CRUD permissions compared to mirror user. "
+                "Inform requester to raise Manage User Access RITM in ServiceNow."
+            )
             preconditions = [
                 "User exists in NA Org",
                 "User.IsActive == True",
-                "Object CRUD Permissions Missing",
+                "Object Permissions differ from mirror user",
             ]
 
-        elif issue_code in ["OBJECT-3", "OBJECT-003", "OBJECT-FLS-MISSING"]:
+        elif issue_code in ["OBJECT-2B", "OBJECT-FLS-MISSING"] or (issue_code.startswith("OBJECT") and "fls" in issue_code.lower()):
             target_field = "RITMGuidance"
-            proposed_value = "Submit Manage User Access request for Field-Level Security (FLS) Permission Set assignment. Route to TCS-America-SFDC."
-            justification = "Per SOP OBJECT-3: User lacks Field-Level Security (FLS) permissions."
+            proposed_value = "Submit Manage User Access RITM for required Field-Level Security (FLS) Permission Set assignment per mirror user comparison."
+            justification = (
+                "Per SOP Object-2B: User lacks Field-Level Security (FLS) permissions compared to mirror user. "
+                "Inform requester to raise Manage User Access RITM in ServiceNow."
+            )
             preconditions = [
                 "User exists in NA Org",
                 "User.IsActive == True",
-                "Field-Level Security Missing",
+                "Field Visibility/Edit Permission differs from mirror user",
             ]
 
-        # Record Domain Scenarios
-        elif issue_code in ["RECORD-1", "RECORD-001", "RECORD-FOLDER-ACCESS-MISSING"]:
+        # Record Domain Scenarios (Record-1A, Record-1B, Record-2A, Record-2B, Record-3A, Record-3B, Record-3C)
+        elif issue_code in ["RECORD-1A", "RECORD-OBJ-PERM-REPORT", "RECORD-OBJ-PERM-MISSING"] and "folder" not in str(diagnosis.get("decision_basis", "")).lower():
+            target_field = "RITMGuidance"
+            proposed_value = "Submit Manage User Access RITM for required underlying Report/Dashboard Object Profile/Permission Set assignment per mirror user comparison."
+            justification = (
+                "Per SOP Record-1A: User lacks access to underlying object(s) used by the report or dashboard. "
+                "Object-level access must be validated before reviewing folder sharing. Inform user to raise Manage User RITM."
+            )
+            preconditions = [
+                "User exists in NA Org",
+                "User.IsActive == True",
+                "Underlying Object Permissions differ from Mirror User",
+            ]
+
+        elif issue_code in ["RECORD-1B", "RECORD-1", "RECORD-001", "RECORD-FOLDER-ACCESS-MISSING"]:
             target_field = "Guidance"
-            proposed_value = "Grant Viewer access on target Report/Dashboard Folder via Folder Sharing to user or user's Public Group."
-            justification = "Per SOP RECORD-1: User lacks access to Report/Dashboard Folder."
+            proposed_value = (
+                "Notify and inform the respective Report/Dashboard Folder Owner to share folder access with user. "
+                "Folder can be shared by respective owners ONLY. User can go to reports and create folders manually if needed."
+            )
+            justification = (
+                "Per SOP Record-1B: User has object-level access but Report folder is not shared with user. "
+                "Folder can be shared by the respective owners ONLY."
+            )
             preconditions = [
                 "User exists in NA Org",
                 "User.IsActive == True",
-                "Folder Access Missing",
+                "Report Folder Access Missing",
             ]
 
-        elif issue_code in ["RECORD-2", "RECORD-002", "RECORD-OPP-CASE-SHARING-MISSING"]:
-            target_field = "Guidance"
-            proposed_value = "Add user to Opportunity Team / Case Team with Read access or create manual record share."
-            justification = "Per SOP RECORD-2: User lacks record sharing for Opportunity/Case."
-            preconditions = [
-                "User exists in NA Org",
-                "User.IsActive == True",
-                "Opportunity/Case Record Sharing Missing",
-            ]
-
-        elif issue_code in ["RECORD-3", "RECORD-003", "RECORD-SHARING-MISSING"]:
-            target_field = "Guidance"
-            proposed_value = "Create record share or assign user to public group granting row-level access to the record."
-            justification = "Per SOP RECORD-3: User lacks row-level record sharing."
-            preconditions = [
-                "User exists in NA Org",
-                "User.IsActive == True",
-                "Record Sharing Missing",
-            ]
-
-        elif issue_code in ["RECORD-4", "RECORD-004", "RECORD-FLS-MISSING"]:
+        elif issue_code in ["RECORD-2A", "RECORD-OBJ-PERM-OPP-CASE"]:
             target_field = "RITMGuidance"
-            proposed_value = "Submit Manage User Access RITM for Field-Level Security (FLS) Permission Set assignment."
-            justification = "Per SOP RECORD-4: User lacks FLS permissions on record field."
+            proposed_value = "Submit Manage User Access RITM for required Opportunity or Case Object Permission Set assignment per mirror user comparison."
+            justification = (
+                "Per SOP Record-2A: User lacks object-level access to Opportunity or Case. "
+                "Object access must be validated before record sharing review. Inform user to raise Manage User RITM."
+            )
             preconditions = [
                 "User exists in NA Org",
                 "User.IsActive == True",
-                "Record Field FLS Missing",
+                "ObjectPermissions lack required access to Opportunity or Case",
             ]
 
-        elif issue_code in ["RECORD-OBJ-PERM-MISSING"]:
-            target_field = "RITMGuidance"
-            proposed_value = "Submit Manage User Access RITM for Object-level Read/Create permissions."
-            justification = "Per SOP RECORD-OBJ-PERM-MISSING: Object-level permissions missing."
+        elif issue_code in ["RECORD-2B", "RECORD-2", "RECORD-002", "RECORD-OPP-CASE-SHARING-MISSING"]:
+            target_field = "Guidance"
+            proposed_value = "Add user to Opportunity Team / Case Team with Read access or request appropriate sharing through Public Group, Queue, Sharing Rule, Territory, or Manual Sharing."
+            justification = (
+                "Per SOP Record-2B: Object access confirmed but UserRecordAccess.HasReadAccess is False. "
+                "Missing record-level sharing for Opportunity/Case."
+            )
             preconditions = [
                 "User exists in NA Org",
                 "User.IsActive == True",
-                "Object Permissions Missing",
+                "Object Access = True",
+                "UserRecordAccess.HasReadAccess = False",
+            ]
+
+        elif issue_code in ["RECORD-3A", "RECORD-OBJ-PERM-RECORD"]:
+            target_field = "RITMGuidance"
+            proposed_value = "Submit Manage User Access RITM for required Object Permission on affected record SObject type per mirror user comparison."
+            justification = (
+                "Per SOP Record-3A: User lacks Object Permission for the record. "
+                "Object access must be validated before record sharing review. Inform user to raise Manage User RITM."
+            )
+            preconditions = [
+                "User exists in NA Org",
+                "User.IsActive == True",
+                "Required Object Permission Missing",
+            ]
+
+        elif issue_code in ["RECORD-3B", "RECORD-3", "RECORD-003", "RECORD-SHARING-MISSING"]:
+            target_field = "Guidance"
+            proposed_value = "Grant required sharing access through approved access path (standard object share e.g. AccountShare with row cause or territory sharing)."
+            justification = (
+                "Per SOP Record-3B: Missing record-level sharing. Object access confirmed but UserRecordAccess.HasReadAccess = False. "
+                "Review standard share table and row cause to grant access through approved process."
+            )
+            preconditions = [
+                "User exists in NA Org",
+                "User.IsActive == True",
+                "UserRecordAccess.HasReadAccess = False",
+            ]
+
+        elif issue_code in ["RECORD-3C", "RECORD-4", "RECORD-004", "RECORD-FLS-MISSING"]:
+            target_field = "RITMGuidance"
+            proposed_value = "Submit Manage User Access RITM for required Field-Level Security (FLS) Permission Set assignment per mirror user comparison."
+            justification = (
+                "Per SOP Record-3C: User can open the record but impacted field is not visible/editable due to missing FLS. "
+                "Inform user to raise Manage User RITM."
+            )
+            preconditions = [
+                "User can open the record",
+                "Impacted field is not visible/editable",
+                "FLS differs from mirror user",
             ]
 
         else:
