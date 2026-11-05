@@ -67,3 +67,4 @@ The user is unable to run, view, or refresh a Report or Dashboard because their 
 
 ## HITL Requirements
 - Human operator authorization required to transmit Manage User RITM guidance to requester.
+

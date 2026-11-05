@@ -114,11 +114,6 @@ def extract_stage_instructions(
     sections = parsed_skill.get("sections", {})
     stage_key = stage.lower()
 
-    if stage_key not in sections:
-        raise SkillParseError(
-            f"Stage '{stage}' not found in canonical skill sections: {list(sections.keys())}"
-        )
-
     parts = []
 
     # Metadata Header
@@ -131,8 +126,27 @@ def extract_stage_instructions(
     if "purpose" in sections:
         parts.append(f"## Purpose\n{sections['purpose']}")
 
+    # Determine stage content with graceful fallbacks
+    if stage_key in sections:
+        stage_content = sections[stage_key]
+    elif stage_key in ("verification", "hitl") and "resolution" in sections:
+        stage_content = sections["resolution"]
+    elif stage_key == "verification":
+        stage_content = (
+            f"Verify that the executed remediation for {meta.get('issue_code')} achieved the desired "
+            f"Salesforce state and safety policies are satisfied."
+        )
+    elif stage_key == "hitl":
+        stage_content = (
+            f"Require explicit human operator approval before executing any state mutation for {meta.get('issue_code')}."
+        )
+    else:
+        raise SkillParseError(
+            f"Stage '{stage}' not found in canonical skill sections: {list(sections.keys())}"
+        )
+
     # Requested Stage Content
-    parts.append(f"## Stage Instructions: {stage.upper()}\n{sections[stage_key]}")
+    parts.append(f"## Stage Instructions: {stage.upper()}\n{stage_content}")
 
     # Shared Safety Rules
     if "safety rules" in sections:

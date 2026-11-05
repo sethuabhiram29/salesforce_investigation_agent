@@ -60,3 +60,4 @@ The user is unable to open or access a specific Salesforce record because their 
 
 ## HITL Requirements
 - Human operator authorization required to transmit Manage User Access RITM guidance to requester.
+

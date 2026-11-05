@@ -66,3 +66,4 @@ The user has valid Object-level access to the Opportunity or Case object, but ca
 
 ## HITL Requirements
 - Human operator authorization required to transmit sharing update guidance to requester.
+

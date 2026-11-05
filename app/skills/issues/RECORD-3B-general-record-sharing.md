@@ -67,3 +67,4 @@ The user has confirmed Object-level access to the SObject type, but cannot acces
 
 ## HITL Requirements
 - Human operator authorization required before executing or transmitting record sharing updates.
+

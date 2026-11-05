@@ -65,3 +65,4 @@ The user can successfully open and access the target Salesforce record, but spec
 
 ## HITL Requirements
 - Human operator authorization required to transmit Manage User Access RITM guidance to requester.
+

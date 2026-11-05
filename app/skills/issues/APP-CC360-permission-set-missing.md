@@ -74,3 +74,15 @@ Confirmed only when:
    - Provide Portal Admin contact: **Heather McKelvey (Heather.Mckelvey@bd.com)**.
    - Provide CC360 portal URL: `https://bdx.my.site.com/cc360/`.
 3. Update ServiceNow incident work notes with complete findings, RITM guidance, assignment group, and portal admin details.
+
+
+# Verification
+
+## Expected Post-Remediation State
+- Manage User Access RITM guidance formulated and delivered to requester.
+- User account confirmed active in Salesforce NA Org (`User.IsActive == True`).
+- No unauthorized direct Salesforce mutation executed without approved RITM catalog workflow.
+
+## Verification Procedure
+1. Confirm ServiceNow incident work notes contain complete RITM guidance, portal URL, and admin contact.
+2. Query Salesforce User record to confirm operational active state.
