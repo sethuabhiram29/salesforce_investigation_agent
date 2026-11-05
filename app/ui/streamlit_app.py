@@ -502,7 +502,7 @@ if start_btn:
                         st.markdown(f"""
                         **Orchestrator Stage Summary**: Evaluated incoming ticket narrative against canonical classification skill.
                         - **Classified Domain**: <span class="{domain_class}">{domain}</span>
-                        - **Login URL / Endpoint**: <code>{state.get('login_url') or triage.get('login_url') or 'None cited in ticket (Skipping to Swimlane 2)'}</code>
+                        - **Login URL / Endpoint**: <code>{state_update.get('login_url') or accumulated_state.get('login_url') or triage.get('login_url') or 'None cited in ticket (Skipping to Swimlane 2)'}</code>
                         - **Ambiguity Detected**: `{"Yes (Broad symptom - will perform cross-domain probe)" if is_ambig else "No (High confidence)"}`
                         - **Triage Reasoning**: *{triage.get("reasoning", "Extracted domain indicators from symptom profile.")}*
                         - 🎯 **Decision Basis**: *{triage_audit.get("decision_basis", "Domain determined by ticket narrative keywords.")}*
