@@ -61,7 +61,7 @@ class TestOuterGraph(unittest.TestCase):
             "incident_id": "INC_TEST_002",
             "short_description": "Salesforce is broken",
             "description": "Can't access salesforce at all",
-            "caller_email": "someone@acme.corp",
+            "caller_email": "alex.taylor@acme.corp",
         }
 
         final_state = self.orchestrator.run_investigation(vague_incident)

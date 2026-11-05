@@ -97,8 +97,11 @@ def node_escalation(state: InvestigationState) -> InvestigationState:
 
 def route_after_triage(state: InvestigationState) -> Literal["diagnosis", "escalation"]:
     triage = state.get("triage_result") or {}
-    if triage.get("is_ambiguous"):
+    if not triage.get("domain"):
         return "escalation"
+    # Route to diagnosis so the Diagnosis Agent can traverse the Knowledge Graph!
+    # Even when is_ambiguous is True, the Diagnosis Agent executes confidence-ranked
+    # multi-domain traversal (evaluating primary domain first, then fallback domains >= 20%).
     # Never abort or escalate prematurely simply because a user was not found during triage!
     # The Knowledge Graph contains a dedicated swimlane for 'User not found in any org'
     # (NODE_SEARCH_MAIN_ORG -> NODE_USER_FOUND_MAIN -> NODE_SEARCH_OTHER_ORGS -> NODE_USER_FOUND_OTHER -> TERMINAL_LOGIN_1).

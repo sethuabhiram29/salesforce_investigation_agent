@@ -47,7 +47,7 @@ def parse_args():
         "--domain",
         "-d",
         type=str,
-        default="truffle-unlit-glitzy.ngrok-free.dev",
+        default="clad-silent-quiet.ngrok-free.dev",
         help="Static ngrok domain or subdomain",
     )
     parser.add_argument(
