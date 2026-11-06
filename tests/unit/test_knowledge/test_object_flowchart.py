@@ -38,6 +38,7 @@ class TestObjectFlowchartKnowledgeGraph(unittest.TestCase):
         self.assertIn("NODE_OBJ_CLASSIFY_ISSUE_TYPE", node_ids)
         self.assertIn("NODE_OBJ_RETRIEVE_CONTACT", node_ids)
         self.assertIn("NODE_OBJ_IS_WIZARD_COUNTRY_BLANK", node_ids)
+        self.assertIn("NODE_OBJ_FETCH_MIRROR_WIZARD", node_ids)
         self.assertIn("TERMINAL_OBJ_WIZARD_COUNTRY_BLANK", node_ids)
 
     def test_object_wizard_country_populated_manual_review(self):
@@ -75,6 +76,9 @@ class TestObjectFlowchartKnowledgeGraph(unittest.TestCase):
         self.assertIn(res.issue_code, ["OBJECT-2A", "OBJECT-2"])
         node_ids = [s.get("graph_node_id") for s in steps]
         self.assertIn("NODE_OBJ_IS_OBJECT_ACCESS_ISSUE", node_ids)
+        self.assertIn("NODE_OBJ_FETCH_MIRROR_USER", node_ids)
+        self.assertIn("NODE_OBJ_COMPARE_OBJECT_PERMS", node_ids)
+        self.assertIn("NODE_OBJ_DO_OBJECT_PERMS_DIFFER", node_ids)
         self.assertIn("TERMINAL_OBJ_OBJECT_ACCESS_ISSUE", node_ids)
 
     def test_object_field_access_issue_confirms_object_3(self):
@@ -95,6 +99,9 @@ class TestObjectFlowchartKnowledgeGraph(unittest.TestCase):
         self.assertIn(res.issue_code, ["OBJECT-2B", "OBJECT-3"])
         node_ids = [s.get("graph_node_id") for s in steps]
         self.assertIn("NODE_OBJ_IS_FIELD_ACCESS_ISSUE", node_ids)
+        self.assertIn("NODE_OBJ_FETCH_MIRROR_FIELD", node_ids)
+        self.assertIn("NODE_OBJ_COMPARE_FIELD_PERMS", node_ids)
+        self.assertIn("NODE_OBJ_DO_FIELD_PERMS_DIFFER", node_ids)
         self.assertIn("TERMINAL_OBJ_FIELD_ACCESS_ISSUE", node_ids)
 
     def test_user_cannot_edit_account_details_confirms_object_2a(self):
@@ -113,6 +120,9 @@ class TestObjectFlowchartKnowledgeGraph(unittest.TestCase):
         self.assertIn("NODE_OBJ_CLASSIFY_ISSUE_TYPE", node_ids)
         self.assertIn("NODE_OBJ_HAS_OBJECT_OR_FIELD_SYMPTOM", node_ids)
         self.assertIn("NODE_OBJ_IS_OBJECT_ACCESS_ISSUE", node_ids)
+        self.assertIn("NODE_OBJ_FETCH_MIRROR_USER", node_ids)
+        self.assertIn("NODE_OBJ_COMPARE_OBJECT_PERMS", node_ids)
+        self.assertIn("NODE_OBJ_DO_OBJECT_PERMS_DIFFER", node_ids)
         self.assertIn("TERMINAL_OBJ_OBJECT_ACCESS_ISSUE", node_ids)
 
     def test_product_search_blank_wizard_country_confirms_object_3(self):
@@ -130,6 +140,7 @@ class TestObjectFlowchartKnowledgeGraph(unittest.TestCase):
         self.assertIn(res.issue_code, ["OBJECT-3", "OBJECT-1"])
         node_ids = [s.get("graph_node_id") for s in steps]
         self.assertIn("NODE_OBJ_RETRIEVE_CONTACT", node_ids)
+        self.assertIn("NODE_OBJ_FETCH_MIRROR_WIZARD", node_ids)
         self.assertIn("TERMINAL_OBJ_WIZARD_COUNTRY_BLANK", node_ids)
 
     def test_object_inactive_user_routes_to_shared_login_flow(self):

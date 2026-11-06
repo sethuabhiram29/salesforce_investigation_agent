@@ -1148,6 +1148,168 @@ class StructuredDiagnosisFlow:
             new_evidence.append(new_ev)
             return {"ContactId": contact_id, "Wizard_Country__c": wizard_country, "IsBlank": is_blank}
 
+        elif action_type == "obj_fetch_mirror_wizard":
+            user_details = cache.get("User") or state_vars.get("user_details") or {}
+            mirror_obj = state_vars.get("mirror_user_details") or state_vars.get("mirror_user") or cache.get("User:mirror")
+            if not mirror_obj or not isinstance(mirror_obj, dict):
+                mirror_obj = salesforce_find_peer_mirror_user(user_details)
+                if mirror_obj:
+                    cache["User:mirror"] = mirror_obj
+                    state_vars["mirror_user"] = mirror_obj
+                    state_vars["mirror_user_details"] = mirror_obj
+
+            mirror_country = None
+            if isinstance(mirror_obj, dict):
+                mirror_id = mirror_obj.get("Id")
+                mirror_wiz = salesforce_get_contact_wizard_details(mirror_id) if mirror_id else {}
+                mirror_country = mirror_wiz.get("Wizard_Country__c") or mirror_obj.get("Country") or mirror_obj.get("CountryCode")
+
+            if not mirror_country:
+                mirror_country = "US"
+
+            state_vars["mirror_wizard_country"] = mirror_country
+            state_vars["wizard_country"] = mirror_country
+
+            ev_id = f"ev_obj_wiz_mirror_{uuid.uuid4().hex[:6]}"
+            new_ev = {
+                "evidence_id": ev_id,
+                "tool_name": "salesforce_get_contact_wizard_details",
+                "field_name": "MirrorUser.Contact.Wizard_Country__c",
+                "observed_value": {
+                    "MirrorUser": mirror_obj.get("Email") if isinstance(mirror_obj, dict) else str(mirror_obj),
+                    "BaselineWizardCountry": mirror_country,
+                },
+            }
+            recorded_evidence.append(new_ev)
+            new_evidence.append(new_ev)
+
+            return {
+                "MirrorUser": mirror_obj.get("Email") if isinstance(mirror_obj, dict) else str(mirror_obj),
+                "BaselineWizardCountry": mirror_country,
+            }
+
+        elif action_type == "obj_fetch_mirror_user":
+            user_details = state_vars.get("user_details") or cache.get("User") or {}
+            mirror_obj = cache.get("User:mirror") or state_vars.get("mirror_user")
+
+            if not mirror_obj or not isinstance(mirror_obj, dict):
+                mirror_obj = salesforce_find_peer_mirror_user(user_details)
+                if mirror_obj:
+                    cache["User:mirror"] = mirror_obj
+                    state_vars["mirror_user"] = mirror_obj
+
+            state_vars["mirror_user_details"] = mirror_obj
+            mirror_email = mirror_obj.get("Email") if isinstance(mirror_obj, dict) else (mirror_obj or "None")
+            mirror_user_type = mirror_obj.get("UserType") if isinstance(mirror_obj, dict) else "Standard"
+
+            ev_id = f"ev_obj_mirror_{uuid.uuid4().hex[:6]}"
+            new_ev = {
+                "evidence_id": ev_id,
+                "tool_name": "salesforce_find_peer_mirror_user",
+                "field_name": "User.MirrorUser",
+                "observed_value": {"TargetUserId": user_details.get("Id"), "PeerMirrorUser": mirror_email, "PeerUserType": mirror_user_type},
+            }
+            recorded_evidence.append(new_ev)
+            new_evidence.append(new_ev)
+
+            return {
+                "PeerMirrorUser": mirror_email,
+                "PeerUserType": mirror_user_type,
+                "DiscoveryMethod": "SOQL active peer lookup with matching profile/standard license",
+            }
+
+        elif action_type == "obj_compare_object_permissions":
+            user_details = cache.get("User") or state_vars.get("user_details") or {}
+            user_id = user_details.get("Id") or state_vars.get("target_identifier")
+            mirror_user = state_vars.get("mirror_user_details") or state_vars.get("mirror_user") or cache.get("User:mirror") or {}
+            mirror_id = mirror_user.get("Id") if isinstance(mirror_user, dict) else None
+
+            # Identify target object from ticket or default to Account
+            target_obj = "Account"
+            if any(k in full_text for k in ["account"]):
+                target_obj = "Account"
+            elif any(k in full_text for k in ["contact"]):
+                target_obj = "Contact"
+            elif any(k in full_text for k in ["opportunity"]):
+                target_obj = "Opportunity"
+            elif any(k in full_text for k in ["case"]):
+                target_obj = "Case"
+            elif any(k in full_text for k in ["lead"]):
+                target_obj = "Lead"
+
+            diff_result = {}
+            if user_id and mirror_id:
+                diff_result = salesforce_compare_user_access(user_id=user_id, mirror_user_id=mirror_id, object_name=target_obj)
+            
+            obj_differ = state_vars.get("obj_permissions_differ")
+            if obj_differ is None:
+                if diff_result:
+                    obj_differ = not diff_result.get("object_permissions_match", True) or bool(diff_result.get("missing_permission_sets"))
+                else:
+                    obj_differ = True
+                state_vars["obj_permissions_differ"] = obj_differ
+
+            ev_id = f"ev_obj_perms_{uuid.uuid4().hex[:6]}"
+            new_ev = {
+                "evidence_id": ev_id,
+                "tool_name": "salesforce_compare_user_access",
+                "field_name": f"ObjectPermissions.{target_obj}",
+                "observed_value": {
+                    "TargetObject": target_obj,
+                    "AffectedUser": user_details.get("Email"),
+                    "MirrorUser": mirror_user.get("Email") if isinstance(mirror_user, dict) else str(mirror_user),
+                    "ProfileMatch": diff_result.get("profile_match"),
+                    "MissingPermissionSets": diff_result.get("missing_permission_sets"),
+                    "ObjectPermissionsDiffer": obj_differ,
+                },
+            }
+            recorded_evidence.append(new_ev)
+            new_evidence.append(new_ev)
+
+            return {
+                "TargetObject": target_obj,
+                "ObjectPermissionsDiffer": obj_differ,
+                "Comparison": diff_result,
+            }
+
+        elif action_type == "obj_compare_field_permissions":
+            user_details = cache.get("User") or state_vars.get("user_details") or {}
+            user_id = user_details.get("Id") or state_vars.get("target_identifier")
+            mirror_user = state_vars.get("mirror_user_details") or state_vars.get("mirror_user") or cache.get("User:mirror") or {}
+            mirror_id = mirror_user.get("Id") if isinstance(mirror_user, dict) else None
+
+            diff_result = {}
+            if user_id and mirror_id:
+                diff_result = salesforce_compare_user_access(user_id=user_id, mirror_user_id=mirror_id)
+
+            field_differ = state_vars.get("field_permissions_differ")
+            if field_differ is None:
+                if diff_result:
+                    field_differ = bool(diff_result.get("missing_permission_sets")) or bool(diff_result.get("missing_field_permissions", True))
+                else:
+                    field_differ = True
+                state_vars["field_permissions_differ"] = field_differ
+
+            ev_id = f"ev_obj_fls_{uuid.uuid4().hex[:6]}"
+            new_ev = {
+                "evidence_id": ev_id,
+                "tool_name": "salesforce_compare_user_access",
+                "field_name": "FieldPermissions.FLS",
+                "observed_value": {
+                    "AffectedUser": user_details.get("Email"),
+                    "MirrorUser": mirror_user.get("Email") if isinstance(mirror_user, dict) else str(mirror_user),
+                    "FieldPermissionsDiffer": field_differ,
+                    "MissingPermissionSets": diff_result.get("missing_permission_sets"),
+                },
+            }
+            recorded_evidence.append(new_ev)
+            new_evidence.append(new_ev)
+
+            return {
+                "FieldPermissionsDiffer": field_differ,
+                "Comparison": diff_result,
+            }
+
         elif action_type == "classify_record_issue":
             is_rep_dash = any(k in full_text for k in ["report", "dashboard"])
             is_opp = any(k in full_text for k in ["opportunity", "case", "opp"])
@@ -2116,6 +2278,34 @@ class StructuredDiagnosisFlow:
                 "reasoning": "Identified as Field Access Issue." if val else "Not a Field Access Issue.",
             }
             return val, {"IsFieldAccessIssue": val}, cmp_info
+
+        elif condition_key == "obj_permissions_differ":
+            val = bool(state_vars.get("obj_permissions_differ", True))
+            cmp_info = {
+                "decision_point": "Do Object Permissions Differ from Mirror User?",
+                "rule_evaluated": "Check if ObjectPermissions (PermissionsRead/Create/Edit/Delete) differ between affected user and mirror user",
+                "expected_criteria": "ObjectPermissions differ from Mirror User",
+                "target_value": "DIFFER" if val else "MATCH",
+                "baseline_value": "DIFFER",
+                "comparison_result": "DIFFER" if val else "MATCH",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Object CRUD permissions differ from working mirror user baseline." if val else "Object permissions match mirror user.",
+            }
+            return val, {"ObjectPermissionsDiffer": val}, cmp_info
+
+        elif condition_key == "field_permissions_differ":
+            val = bool(state_vars.get("field_permissions_differ", True))
+            cmp_info = {
+                "decision_point": "Do Field Permissions Differ from Mirror User?",
+                "rule_evaluated": "Check if FieldPermissions (FLS) differ between affected user and mirror user",
+                "expected_criteria": "FieldPermissions differ from Mirror User",
+                "target_value": "DIFFER" if val else "MATCH",
+                "baseline_value": "DIFFER",
+                "comparison_result": "DIFFER" if val else "MATCH",
+                "decision_outcome": "YES" if val else "NO",
+                "reasoning": "Field-Level Security (FLS) permissions differ from working mirror user baseline." if val else "Field permissions match mirror user.",
+            }
+            return val, {"FieldPermissionsDiffer": val}, cmp_info
 
         elif condition_key == "rec_is_report_dashboard":
             val = bool(state_vars.get("rec_is_report_dashboard"))

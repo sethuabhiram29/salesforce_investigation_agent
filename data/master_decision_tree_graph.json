@@ -877,6 +877,17 @@
       "description": "Evaluate if the Wizard_Country__c field on Contact is null or empty"
     },
     {
+      "id": "NODE_OBJ_FETCH_MIRROR_WIZARD",
+      "label": "Compare with Mirror User Contact",
+      "type": "ACTION",
+      "swimlane": "Blank Wizard_Country__c field",
+      "domain": "OBJECT",
+      "action_name": "obj_fetch_mirror_wizard",
+      "description": "Retrieve mirror user Contact record to establish valid Wizard_Country__c baseline value",
+      "action_type": "obj_fetch_mirror_wizard",
+      "tool_name": "salesforce_get_contact_wizard_details"
+    },
+    {
       "id": "TERMINAL_OBJ_WIZARD_COUNTRY_BLANK",
       "label": "Confirmed: Wizard_Country__c is blank",
       "type": "TERMINAL",
@@ -906,6 +917,37 @@
       "description": "Evaluate if the issue pertains to Object-level CRUD permissions"
     },
     {
+      "id": "NODE_OBJ_FETCH_MIRROR_USER",
+      "label": "Obtain Mirror User Details",
+      "type": "ACTION",
+      "swimlane": "Object Access Issue",
+      "domain": "OBJECT",
+      "action_name": "obj_fetch_mirror_user",
+      "description": "Obtain mirror user details from ticket narrative or discover peer mirror user in same BU/Profile",
+      "action_type": "obj_fetch_mirror_user",
+      "tool_name": "salesforce_find_peer_mirror_user"
+    },
+    {
+      "id": "NODE_OBJ_COMPARE_OBJECT_PERMS",
+      "label": "Compare Profile, Permission Sets, and Object Permissions",
+      "type": "ACTION",
+      "swimlane": "Object Access Issue",
+      "domain": "OBJECT",
+      "action_name": "obj_compare_object_permissions",
+      "description": "Compare User Profile assignments, assigned Permission Sets, and ObjectPermissions against mirror user",
+      "action_type": "obj_compare_object_permissions",
+      "tool_name": "salesforce_compare_user_access"
+    },
+    {
+      "id": "NODE_OBJ_DO_OBJECT_PERMS_DIFFER",
+      "label": "Do Object Permissions Differ from Mirror User?",
+      "type": "DECISION",
+      "swimlane": "Object Access Issue",
+      "domain": "OBJECT",
+      "condition_key": "obj_permissions_differ",
+      "description": "Evaluate if ObjectPermissions differ between affected user and mirror user"
+    },
+    {
       "id": "TERMINAL_OBJ_OBJECT_ACCESS_ISSUE",
       "label": "Confirmed: Object Access Issue",
       "type": "TERMINAL",
@@ -924,6 +966,37 @@
       "domain": "OBJECT",
       "condition_key": "is_field_access_issue",
       "description": "Evaluate if the issue pertains to Field-Level Security (FLS) permissions"
+    },
+    {
+      "id": "NODE_OBJ_FETCH_MIRROR_FIELD",
+      "label": "Obtain Mirror User Details for Field Access",
+      "type": "ACTION",
+      "swimlane": "Field Access Issue",
+      "domain": "OBJECT",
+      "action_name": "obj_fetch_mirror_user",
+      "description": "Obtain mirror user details to benchmark Field-Level Security",
+      "action_type": "obj_fetch_mirror_user",
+      "tool_name": "salesforce_find_peer_mirror_user"
+    },
+    {
+      "id": "NODE_OBJ_COMPARE_FIELD_PERMS",
+      "label": "Compare Profile, Permission Sets, and Field Permissions",
+      "type": "ACTION",
+      "swimlane": "Field Access Issue",
+      "domain": "OBJECT",
+      "action_name": "obj_compare_field_permissions",
+      "description": "Review Field-Level Security and compare field permissions against mirror user",
+      "action_type": "obj_compare_field_permissions",
+      "tool_name": "salesforce_compare_user_access"
+    },
+    {
+      "id": "NODE_OBJ_DO_FIELD_PERMS_DIFFER",
+      "label": "Do Field Permissions Differ from Mirror User?",
+      "type": "DECISION",
+      "swimlane": "Field Access Issue",
+      "domain": "OBJECT",
+      "condition_key": "field_permissions_differ",
+      "description": "Evaluate if FieldPermissions (FLS) differ between affected user and mirror user"
     },
     {
       "id": "TERMINAL_OBJ_FIELD_ACCESS_ISSUE",
@@ -1862,9 +1935,14 @@
     },
     {
       "from": "NODE_OBJ_IS_WIZARD_COUNTRY_BLANK",
-      "to": "TERMINAL_OBJ_WIZARD_COUNTRY_BLANK",
+      "to": "NODE_OBJ_FETCH_MIRROR_WIZARD",
       "type": "ON_YES",
       "condition": "is_wizard_country_blank == True"
+    },
+    {
+      "from": "NODE_OBJ_FETCH_MIRROR_WIZARD",
+      "to": "TERMINAL_OBJ_WIZARD_COUNTRY_BLANK",
+      "type": "TRANSITIONS_TO"
     },
     {
       "from": "NODE_OBJ_IS_WIZARD_COUNTRY_BLANK",
@@ -1886,9 +1964,31 @@
     },
     {
       "from": "NODE_OBJ_IS_OBJECT_ACCESS_ISSUE",
-      "to": "TERMINAL_OBJ_OBJECT_ACCESS_ISSUE",
+      "to": "NODE_OBJ_FETCH_MIRROR_USER",
       "type": "ON_YES",
       "condition": "is_object_access_issue == True"
+    },
+    {
+      "from": "NODE_OBJ_FETCH_MIRROR_USER",
+      "to": "NODE_OBJ_COMPARE_OBJECT_PERMS",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_OBJ_COMPARE_OBJECT_PERMS",
+      "to": "NODE_OBJ_DO_OBJECT_PERMS_DIFFER",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_OBJ_DO_OBJECT_PERMS_DIFFER",
+      "to": "TERMINAL_OBJ_OBJECT_ACCESS_ISSUE",
+      "type": "ON_YES",
+      "condition": "obj_permissions_differ == True"
+    },
+    {
+      "from": "NODE_OBJ_DO_OBJECT_PERMS_DIFFER",
+      "to": "TERMINAL_OBJ_MANUAL_REVIEW",
+      "type": "ON_NO",
+      "condition": "obj_permissions_differ == False"
     },
     {
       "from": "NODE_OBJ_IS_OBJECT_ACCESS_ISSUE",
@@ -1898,9 +1998,31 @@
     },
     {
       "from": "NODE_OBJ_IS_FIELD_ACCESS_ISSUE",
-      "to": "TERMINAL_OBJ_FIELD_ACCESS_ISSUE",
+      "to": "NODE_OBJ_FETCH_MIRROR_FIELD",
       "type": "ON_YES",
       "condition": "is_field_access_issue == True"
+    },
+    {
+      "from": "NODE_OBJ_FETCH_MIRROR_FIELD",
+      "to": "NODE_OBJ_COMPARE_FIELD_PERMS",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_OBJ_COMPARE_FIELD_PERMS",
+      "to": "NODE_OBJ_DO_FIELD_PERMS_DIFFER",
+      "type": "TRANSITIONS_TO"
+    },
+    {
+      "from": "NODE_OBJ_DO_FIELD_PERMS_DIFFER",
+      "to": "TERMINAL_OBJ_FIELD_ACCESS_ISSUE",
+      "type": "ON_YES",
+      "condition": "field_permissions_differ == True"
+    },
+    {
+      "from": "NODE_OBJ_DO_FIELD_PERMS_DIFFER",
+      "to": "TERMINAL_OBJ_MANUAL_REVIEW",
+      "type": "ON_NO",
+      "condition": "field_permissions_differ == False"
     },
     {
       "from": "NODE_OBJ_IS_FIELD_ACCESS_ISSUE",
