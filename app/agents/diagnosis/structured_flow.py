@@ -49,8 +49,122 @@ logger = logging.getLogger(__name__)
 class StructuredDiagnosisFlow:
     """Dynamic Graph Traversal Engine powered by Neo4j Knowledge Graph."""
 
-    def __init__(self):
+    def __init__(self, llm=None):
         self.traversal_steps: List[Dict[str, Any]] = []
+        self.llm = llm or self._init_default_llm()
+
+    def _init_default_llm(self):
+        """Initialize LLM client if configured in environment and responsive."""
+        api_key = os.environ.get("OPENAI_API_KEY")
+        ollama_url = os.environ.get("OLLAMA_BASE_URL")
+
+        try:
+            from langchain_openai import ChatOpenAI
+            if api_key and api_key != "sk-...":
+                return ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
+            elif ollama_url:
+                import urllib.request
+                req = urllib.request.Request(f"{ollama_url.rstrip('/')}/api/tags")
+                try:
+                    with urllib.request.urlopen(req, timeout=0.3):
+                        return ChatOpenAI(
+                            base_url=f"{ollama_url.rstrip('/')}/v1",
+                            api_key="ollama",
+                            model="llama3",
+                            temperature=0.0,
+                            timeout=5.0,
+                        )
+                except Exception:
+                    return None
+        except Exception as exc:
+            logger.debug("LLM not initialized for StructuredDiagnosisFlow: %s", exc)
+        return None
+
+    def _classify_object_subcategory(self, summary: str, desc: str, full_text: str) -> Dict[str, Any]:
+        """Classify Object domain incident into subcategories dynamically via LLM or semantic fallback.
+
+        Subcategories:
+        1. WIZARD_APP: Wizard Application access issues (Object-1)
+        2. PRODUCT_SEARCH: Product Search object/feature issues (Object-3)
+        3. OBJECT_ACCESS: Cannot view, create, edit, or delete records of an entire object due to missing CRUD permissions (Object-2A)
+        4. FIELD_ACCESS: Specific field is not visible, read-only, or cannot be edited due to missing Field-Level Security / FLS (Object-2B)
+        """
+        # Try dynamic LLM classification first
+        if self.llm:
+            try:
+                from langchain_core.messages import SystemMessage, HumanMessage
+                sys_msg = (
+                    "You are an expert Salesforce Diagnosis Agent specializing in the OBJECT domain.\n"
+                    "Analyze the incident ticket and classify it into exactly ONE of the following 4 canonical subcategories:\n"
+                    "1. 'WIZARD_APP' - User cannot access the Wizard Application (e.g. blank wizard, wizard app access error).\n"
+                    "2. 'PRODUCT_SEARCH' - User cannot search products or access Product Search object.\n"
+                    "3. 'OBJECT_ACCESS' - User cannot create, view, edit, or delete records of an entire standard/custom object (e.g. Account, Contact, Opportunity, Case, Lead) due to missing Object CRUD permissions.\n"
+                    "4. 'FIELD_ACCESS' - User has object access, but a specific field on the object is not visible, hidden, read-only, or cannot be edited due to missing Field-Level Security (FLS).\n\n"
+                    "Output valid JSON only with keys:\n"
+                    "- 'subcategory': One of ['WIZARD_APP', 'PRODUCT_SEARCH', 'OBJECT_ACCESS', 'FIELD_ACCESS']\n"
+                    "- 'target_object': Identified object name (e.g. 'Account', 'Contact', 'Opportunity', 'Case', 'Lead', null if generic)\n"
+                    "- 'target_field': Identified field name (if FIELD_ACCESS, e.g. 'Rating', 'Phone', null if not specified)\n"
+                    "- 'confidence': Decimal between 0.0 and 1.0\n"
+                    "- 'reasoning': Brief explanation of the classification basis"
+                )
+                usr_msg = f"Short Description: {summary}\nFull Description: {desc}\nRaw Context: {full_text}"
+                resp = self.llm.invoke([SystemMessage(content=sys_msg), HumanMessage(content=usr_msg)])
+                content = resp.content.strip()
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0].strip()
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0].strip()
+                data = json.loads(content)
+                subcat = str(data.get("subcategory", "")).upper()
+                if subcat in ["WIZARD_APP", "PRODUCT_SEARCH", "OBJECT_ACCESS", "FIELD_ACCESS"]:
+                    return {
+                        "subcategory": subcat,
+                        "target_object": data.get("target_object") or "Account",
+                        "target_field": data.get("target_field"),
+                        "confidence": float(data.get("confidence", 0.95)),
+                        "reasoning": data.get("reasoning", "LLM classified subcategory dynamically based on ticket narrative."),
+                        "classification_source": "LLM_Dynamic",
+                    }
+            except Exception as exc:
+                logger.debug("Dynamic LLM object classification failed, falling back to semantic parser: %s", exc)
+
+        # Fallback Semantic Classification
+        text_lower = full_text.lower()
+        has_wiz = any(k in text_lower for k in ["wizard", "product search", "wizard app", "blank wizard"])
+        is_product_search = any(k in text_lower for k in ["product search", "product search object", "cannot search products"]) and "wizard app" not in text_lower
+
+        field_cues = [
+            "field access", "fls", "field not visible", "field not editable", "cannot edit field",
+            "cannot view field", "field permission", "field-level", "field level", "read-only field",
+            "field is read only", "hidden field", "missing field", "cannot see field", "particular field"
+        ]
+        is_field = any(k in text_lower for k in field_cues)
+
+        # Target object extraction
+        target_obj = "Account"
+        for obj_name in ["contact", "opportunity", "case", "lead", "account"]:
+            if obj_name in text_lower:
+                target_obj = obj_name.capitalize()
+                break
+
+        if has_wiz:
+            subcat = "PRODUCT_SEARCH" if is_product_search else "WIZARD_APP"
+            reasoning = "Incident narrative indicates Wizard application / Product Search access requirement."
+        elif is_field:
+            subcat = "FIELD_ACCESS"
+            reasoning = f"Incident narrative indicates specific field-level invisibility or read-only restriction on {target_obj}."
+        else:
+            subcat = "OBJECT_ACCESS"
+            reasoning = f"Incident narrative indicates missing object-level CRUD (create/read/edit/delete) permissions on {target_obj}."
+
+        return {
+            "subcategory": subcat,
+            "target_object": target_obj,
+            "target_field": None,
+            "confidence": 0.92,
+            "reasoning": reasoning,
+            "classification_source": "Semantic_Dynamic",
+        }
 
     def _record_traversal_step(
         self,
@@ -1055,62 +1169,38 @@ class StructuredDiagnosisFlow:
             return {"IdentifiedSymptoms": symptoms}
 
         elif action_type == "classify_object_issue":
-            has_wiz = any(k in full_text for k in ["wizard", "product search", "wizard app", "blank wizard"])
-            is_wiz_app = any(k in full_text for k in ["wizard app", "wizard application"])
-            is_product_search = any(k in full_text for k in ["product search", "product search object", "cannot search products", "product search issue"]) and not is_wiz_app
-            if "is_product_search" not in state_vars:
-                state_vars["is_product_search"] = is_product_search
+            summary = state_vars.get("incident_summary", "")
+            desc = state_vars.get("incident_description", "")
+            classification = self._classify_object_subcategory(summary=summary, desc=desc, full_text=full_text)
 
-            obj_field_cues = [
-                "object access", "field access", "fls", "permission", "cannot view", "cannot edit",
-                "unable to edit", "cannot delete", "unable to delete", "cannot create", "unable to create",
-                "cannot update", "unable to update", "insufficient privileges", "object permission",
-                "field permission", "edit account", "edit contact", "edit opportunity", "edit lead",
-                "edit case", "edit record", "unable to edit some objects", "cannot edit account details",
-                "delete record", "create record", "crud", "object", "field"
-            ]
-            has_obj_field = any(k in full_text for k in obj_field_cues)
+            subcat = classification.get("subcategory", "OBJECT_ACCESS")
+            target_obj = classification.get("target_object") or "Account"
+            if "target_object" not in state_vars or not state_vars["target_object"]:
+                state_vars["target_object"] = target_obj
 
-            field_cues = [
-                "field access", "fls", "field not visible", "field not editable", "cannot edit field",
-                "cannot view field", "field permission", "field-level", "field level", "read-only field",
-                "field is read only", "hidden field", "missing field", "cannot see field", "particular field"
-            ]
-            is_field = any(k in full_text for k in field_cues)
+            has_wiz = subcat in ["WIZARD_APP", "PRODUCT_SEARCH"]
+            is_product_search = (subcat == "PRODUCT_SEARCH")
+            has_obj_field = subcat in ["OBJECT_ACCESS", "FIELD_ACCESS"]
+            is_obj = (subcat == "OBJECT_ACCESS")
+            is_field = (subcat == "FIELD_ACCESS")
 
-            obj_cues = [
-                "object access", "crud", "object permission", "cannot create record", "cannot delete record",
-                "cannot edit record", "cannot update record", "insufficient privileges on object",
-                "insufficient privileges", "cannot edit", "unable to edit", "cannot delete", "unable to delete",
-                "cannot create", "unable to create", "edit account", "edit contact", "edit opportunity",
-                "edit lead", "edit case", "edit record", "unable to edit some objects", "cannot edit account details",
-                "cannot delete account", "cannot create account", "object-level", "object level", "object"
-            ]
-            is_obj = (any(k in full_text for k in obj_cues) or not is_field) and not has_wiz
-
-            # In OBJECT domain: if it is not a wizard symptom, it is an object or field issue
-            if not has_wiz:
-                has_obj_field = True
-                if is_field:
-                    is_obj = False
-                else:
-                    is_obj = True
-
-            if "has_wizard_symptom" not in state_vars:
-                state_vars["has_wizard_symptom"] = has_wiz
-            if "has_object_or_field_symptom" not in state_vars:
-                state_vars["has_object_or_field_symptom"] = has_obj_field
-            if "is_object_access_issue" not in state_vars:
-                state_vars["is_object_access_issue"] = is_obj
-            if "is_field_access_issue" not in state_vars:
-                state_vars["is_field_access_issue"] = is_field
+            state_vars["has_wizard_symptom"] = has_wiz
+            state_vars["is_product_search"] = is_product_search
+            state_vars["has_object_or_field_symptom"] = has_obj_field
+            state_vars["is_object_access_issue"] = is_obj
+            state_vars["is_field_access_issue"] = is_field
+            state_vars["object_classification"] = classification
 
             return {
-                "HasWizardSymptom": state_vars["has_wizard_symptom"],
-                "IsProductSearch": state_vars.get("is_product_search", False),
-                "HasObjectOrFieldSymptom": state_vars["has_object_or_field_symptom"],
-                "IsObjectAccessIssue": state_vars["is_object_access_issue"],
-                "IsFieldAccessIssue": state_vars["is_field_access_issue"],
+                "Subcategory": subcat,
+                "TargetObject": target_obj,
+                "ClassificationMethod": classification.get("classification_source", "Dynamic"),
+                "Confidence": f"{int(classification.get('confidence', 0.95) * 100)}%",
+                "Reasoning": classification.get("reasoning", "Classified object symptom."),
+                "HasWizardSymptom": has_wiz,
+                "HasObjectOrFieldSymptom": has_obj_field,
+                "IsObjectAccessIssue": is_obj,
+                "IsFieldAccessIssue": is_field,
             }
 
         elif action_type == "retrieve_contact_wizard_details":
@@ -1202,19 +1292,45 @@ class StructuredDiagnosisFlow:
             mirror_email = mirror_obj.get("Email") if isinstance(mirror_obj, dict) else (mirror_obj or "None")
             mirror_user_type = mirror_obj.get("UserType") if isinstance(mirror_obj, dict) else "Standard"
 
+            t_profile = (user_details.get("Profile") or {}).get("Name") if isinstance(user_details.get("Profile"), dict) else str(user_details.get("Profile") or "Standard User")
+            m_profile = (mirror_obj.get("Profile") or {}).get("Name") if isinstance(mirror_obj, dict) and isinstance(mirror_obj.get("Profile"), dict) else (mirror_obj.get("Profile") if isinstance(mirror_obj, dict) else "Standard User")
+
+            target_user_dict = {
+                "Id": user_details.get("Id"),
+                "Username": user_details.get("Username") or user_details.get("Email"),
+                "Email": user_details.get("Email"),
+                "Profile": t_profile,
+                "UserType": user_details.get("UserType", "Standard"),
+                "EmployeeNumber": user_details.get("EmployeeNumber", "N/A"),
+                "FederationIdentifier": user_details.get("FederationIdentifier", "N/A"),
+            }
+            mirror_user_dict = {
+                "Id": mirror_obj.get("Id") if isinstance(mirror_obj, dict) else None,
+                "Username": mirror_obj.get("Username") if isinstance(mirror_obj, dict) else mirror_email,
+                "Email": mirror_email,
+                "Profile": m_profile,
+                "UserType": mirror_user_type,
+                "EmployeeNumber": mirror_obj.get("EmployeeNumber", "N/A") if isinstance(mirror_obj, dict) else "N/A",
+                "FederationIdentifier": mirror_obj.get("FederationIdentifier", "N/A") if isinstance(mirror_obj, dict) else "N/A",
+            }
+
             ev_id = f"ev_obj_mirror_{uuid.uuid4().hex[:6]}"
             new_ev = {
                 "evidence_id": ev_id,
                 "tool_name": "salesforce_find_peer_mirror_user",
                 "field_name": "User.MirrorUser",
-                "observed_value": {"TargetUserId": user_details.get("Id"), "PeerMirrorUser": mirror_email, "PeerUserType": mirror_user_type},
+                "observed_value": {
+                    "TargetUser": target_user_dict,
+                    "PeerMirrorUser": mirror_user_dict,
+                    "DiscoveryMethod": "SOQL active peer lookup with matching profile/standard license",
+                },
             }
             recorded_evidence.append(new_ev)
             new_evidence.append(new_ev)
 
             return {
-                "PeerMirrorUser": mirror_email,
-                "PeerUserType": mirror_user_type,
+                "TargetUser": target_user_dict,
+                "PeerMirrorUser": mirror_user_dict,
                 "DiscoveryMethod": "SOQL active peer lookup with matching profile/standard license",
             }
 
@@ -1224,23 +1340,25 @@ class StructuredDiagnosisFlow:
             mirror_user = state_vars.get("mirror_user_details") or state_vars.get("mirror_user") or cache.get("User:mirror") or {}
             mirror_id = mirror_user.get("Id") if isinstance(mirror_user, dict) else None
 
-            # Identify target object from ticket or default to Account
-            target_obj = "Account"
-            if any(k in full_text for k in ["account"]):
-                target_obj = "Account"
-            elif any(k in full_text for k in ["contact"]):
-                target_obj = "Contact"
-            elif any(k in full_text for k in ["opportunity"]):
-                target_obj = "Opportunity"
-            elif any(k in full_text for k in ["case"]):
-                target_obj = "Case"
-            elif any(k in full_text for k in ["lead"]):
-                target_obj = "Lead"
+            # Identify target object from state or ticket
+            target_obj = state_vars.get("target_object")
+            if not target_obj:
+                if any(k in full_text for k in ["contact"]):
+                    target_obj = "Contact"
+                elif any(k in full_text for k in ["opportunity"]):
+                    target_obj = "Opportunity"
+                elif any(k in full_text for k in ["case"]):
+                    target_obj = "Case"
+                elif any(k in full_text for k in ["lead"]):
+                    target_obj = "Lead"
+                else:
+                    target_obj = "Account"
+            state_vars["target_object"] = target_obj
 
             diff_result = {}
             if user_id and mirror_id:
                 diff_result = salesforce_compare_user_access(user_id=user_id, mirror_user_id=mirror_id, object_name=target_obj)
-            
+
             obj_differ = state_vars.get("obj_permissions_differ")
             if obj_differ is None:
                 if diff_result:
@@ -1257,10 +1375,14 @@ class StructuredDiagnosisFlow:
                 "observed_value": {
                     "TargetObject": target_obj,
                     "AffectedUser": user_details.get("Email"),
+                    "AffectedProfile": diff_result.get("affected_profile"),
                     "MirrorUser": mirror_user.get("Email") if isinstance(mirror_user, dict) else str(mirror_user),
+                    "MirrorProfile": diff_result.get("mirror_profile"),
                     "ProfileMatch": diff_result.get("profile_match"),
                     "MissingPermissionSets": diff_result.get("missing_permission_sets"),
                     "ObjectPermissionsDiffer": obj_differ,
+                    "AffectedPermissions": diff_result.get("affected_object_permissions"),
+                    "MirrorPermissions": diff_result.get("mirror_object_permissions"),
                 },
             }
             recorded_evidence.append(new_ev)
@@ -1268,7 +1390,15 @@ class StructuredDiagnosisFlow:
 
             return {
                 "TargetObject": target_obj,
+                "AffectedUser": user_details.get("Email"),
+                "AffectedProfile": diff_result.get("affected_profile"),
+                "MirrorUser": mirror_user.get("Email") if isinstance(mirror_user, dict) else str(mirror_user),
+                "MirrorProfile": diff_result.get("mirror_profile"),
+                "ProfileMatch": diff_result.get("profile_match"),
+                "MissingPermissionSets": diff_result.get("missing_permission_sets"),
                 "ObjectPermissionsDiffer": obj_differ,
+                "AffectedPermissions": diff_result.get("affected_object_permissions"),
+                "MirrorPermissions": diff_result.get("mirror_object_permissions"),
                 "Comparison": diff_result,
             }
 

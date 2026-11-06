@@ -198,6 +198,11 @@ class DiagnosisAgent:
                 state["diagnosis_result"] = diagnosis_result.dict()
                 state["incident_domain"] = current_domain
 
+                # Sync resolved mirror user into state for downstream stages and UI visibility
+                resolved_mirror = evidence_cache.get("User:mirror") or evidence_cache.get("mirror_user") or context.get("mirror_user")
+                if resolved_mirror and not state.get("mirror_user"):
+                    state["mirror_user"] = resolved_mirror
+
                 state.setdefault("trace_events", []).append({
                     "stage": "diagnosis",
                     "agent_name": "DiagnosisAgent",
@@ -274,6 +279,10 @@ class DiagnosisAgent:
 
                     state["diagnosis_result"] = diagnosis_result.dict()
                     state["incident_domain"] = current_domain
+
+                    resolved_mirror = evidence_cache.get("User:mirror") or evidence_cache.get("mirror_user") or context.get("mirror_user")
+                    if resolved_mirror and not state.get("mirror_user"):
+                        state["mirror_user"] = resolved_mirror
 
                     state.setdefault("trace_events", []).append({
                         "stage": "diagnosis",

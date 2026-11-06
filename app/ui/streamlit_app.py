@@ -479,7 +479,7 @@ if start_btn:
                     domain = triage.get("domain", "LOGIN")
                     is_ambig = triage.get("is_ambiguous", False)
                     affected = state_update.get("affected_user", {})
-                    mirror = state_update.get("mirror_user")
+                    mirror = state_update.get("mirror_user") or state_update.get("evidence_cache", {}).get("User:mirror") or accumulated_state.get("mirror_user")
                     history = state_update.get("historical_cases", [])
                     audit_trail = state_update.get("step_audit_trail", [])
                     triage_audit = next((it for it in audit_trail if it.get("stage") == "triage"), {})
@@ -633,6 +633,20 @@ if start_btn:
                         - **Skill Loading Boundary Rule**: *No skill file is loaded during candidate evaluation. Skill file is loaded only in the dedicated resolution planning stage (Point 3) after root cause is confirmed.*
                         """)
 
+                        # Surface resolved mirror user if discovered during diagnosis
+                        diag_mirror = state_update.get("mirror_user") or state_update.get("evidence_cache", {}).get("User:mirror") or accumulated_state.get("mirror_user")
+                        if diag_mirror:
+                            m_name = f"{diag_mirror.get('FirstName', '')} {diag_mirror.get('LastName', '')}".strip() or diag_mirror.get('Email', 'Peer Mirror')
+                            m_prof = (diag_mirror.get('Profile') or {}).get('Name') if isinstance(diag_mirror.get('Profile'), dict) else (diag_mirror.get('Profile') or 'Standard User')
+                            st.markdown(f"""
+                            <div style="background: #fdf4ff; border: 1px solid #d8b4fe; border-radius: 6px; padding: 10px 14px; margin: 10px 0 14px 0;">
+                                <span style="font-weight: 700; color: #7e22ce;">👥 Comparative Peer Mirror User Baseline:</span>
+                                <span style="color: #581c87; font-size: 0.92rem; margin-left: 6px;">
+                                    <b>{m_name}</b> (<code>{diag_mirror.get('Email', 'N/A')}</code>) &bull; Profile: <code>{m_prof}</code> &bull; UserType: <code>{diag_mirror.get('UserType', 'Standard')}</code>
+                                </span>
+                            </div>
+                            """, unsafe_allow_html=True)
+
                         # Step-by-step candidate audit trail
                         audit_trail = state_update.get("step_audit_trail", [])
                         if audit_trail:
@@ -704,7 +718,10 @@ if start_btn:
                                             </table>
                                         </div>
                                         """
-                                    elif item.get("graph_node_id") in ["NODE_FETCH_MIRROR_USER", "NODE_COMPARE_EMP_FED_ID"]:
+                                    elif item.get("graph_node_id") in [
+                                        "NODE_FETCH_MIRROR_USER", "NODE_COMPARE_EMP_FED_ID",
+                                        "NODE_OBJ_FETCH_MIRROR_USER", "NODE_OBJ_FETCH_MIRROR_WIZARD", "NODE_OBJ_FETCH_MIRROR_FIELD"
+                                    ]:
                                         obs_dict = item.get("tool_result") or item.get("observed_values") or {}
                                         t_u = obs_dict.get("TargetUser", {}) if isinstance(obs_dict, dict) else {}
                                         p_m = obs_dict.get("PeerMirrorUser", {}) if isinstance(obs_dict, dict) else {}
@@ -748,6 +765,52 @@ if start_btn:
                                                 </table>
                                             </div>
                                             """
+                                    elif item.get("graph_node_id") in ["NODE_OBJ_COMPARE_OBJECT_PERMS", "NODE_OBJ_COMPARE_FIELD_PERMS"]:
+                                        obs_dict = item.get("tool_result") or item.get("observed_values") or {}
+                                        t_obj = obs_dict.get("TargetObject", "Account")
+                                        aff_u = obs_dict.get("AffectedUser", "Affected User")
+                                        aff_p = obs_dict.get("AffectedProfile", "Standard")
+                                        mir_u = obs_dict.get("MirrorUser", "Peer Mirror")
+                                        mir_p = obs_dict.get("MirrorProfile", "Standard")
+                                        p_match = obs_dict.get("ProfileMatch")
+                                        p_match_str = "Yes (Matching Profile)" if p_match else "No (Profile Difference Detected)"
+                                        missing_ps = obs_dict.get("MissingPermissionSets") or []
+                                        missing_ps_str = ", ".join(missing_ps) if missing_ps else "None identified (Profile CRUD permission restriction)"
+                                        obj_differ = obs_dict.get("ObjectPermissionsDiffer")
+                                        fls_differ = obs_dict.get("FieldPermissionsDiffer")
+                                        diff_flag = obj_differ if obj_differ is not None else fls_differ
+                                        diff_text = "❌ YES: Object/Field Permissions Differ from Mirror User" if diff_flag else "✅ NO: Permissions Match"
+                                        diff_col = "#dc2626" if diff_flag else "#16a34a"
+
+                                        comparison_html = f"""
+                                        <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px 14px; margin: 10px 0;">
+                                            <div style="font-weight: 700; color: #1e293b; margin-bottom: 6px; font-size: 0.92rem;">
+                                                📊 Comparative Differential Permissions Matrix (Object: <code>{t_obj}</code>):
+                                            </div>
+                                            <table style="width: 100%; font-size: 0.87rem; border-collapse: collapse;">
+                                                <tr style="border-bottom: 1px solid #f1f5f9; background: #f8fafc;">
+                                                    <td style="padding: 4px 8px; font-weight: 600; color: #1e40af; width: 28%;">👤 Affected User:</td>
+                                                    <td style="padding: 4px 8px; font-family: monospace; color: #1e40af;">{aff_u} (Profile: {aff_p})</td>
+                                                </tr>
+                                                <tr style="border-bottom: 1px solid #f1f5f9; background: #fdf4ff;">
+                                                    <td style="padding: 4px 8px; font-weight: 600; color: #7e22ce;">👥 Benchmark Mirror User:</td>
+                                                    <td style="padding: 4px 8px; font-family: monospace; color: #7e22ce;">{mir_u} (Profile: {mir_p})</td>
+                                                </tr>
+                                                <tr style="border-bottom: 1px solid #f1f5f9;">
+                                                    <td style="padding: 4px 8px; font-weight: 600; color: #475569;">Profile Alignment:</td>
+                                                    <td style="padding: 4px 8px; color: #0f172a;">{p_match_str}</td>
+                                                </tr>
+                                                <tr style="border-bottom: 1px solid #f1f5f9;">
+                                                    <td style="padding: 4px 8px; font-weight: 600; color: #475569;">Missing Permission Sets:</td>
+                                                    <td style="padding: 4px 8px; color: #b45309; font-weight: 600;">{missing_ps_str}</td>
+                                                </tr>
+                                                <tr>
+                                                    <td style="padding: 4px 8px; font-weight: 600; color: #475569;">Differential Result:</td>
+                                                    <td style="padding: 4px 8px; font-weight: 700; color: {diff_col};">{diff_text}</td>
+                                                </tr>
+                                            </table>
+                                        </div>
+                                        """
 
                                     with st.container():
                                         st.markdown(f"""
