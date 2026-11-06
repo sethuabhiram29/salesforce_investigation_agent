@@ -911,10 +911,10 @@
       "type": "TERMINAL",
       "swimlane": "Object Access Issue",
       "domain": "OBJECT",
-      "root_cause": "OBJECT-2",
-      "issue_code": "OBJECT-2",
-      "skill_file": "app/skills/issues/OBJECT-2-object-access-issue.md",
-      "description": "Confirmed root cause: User lacks required Object CRUD permissions on profile or permission sets"
+      "root_cause": "OBJECT-2A",
+      "issue_code": "OBJECT-2A",
+      "skill_file": "app/skills/issues/OBJECT-2A-object-access-issue.md",
+      "description": "Confirmed root cause: User lacks required Object CRUD permissions on profile or permission sets (ObjectPermissions differ from mirror user)"
     },
     {
       "id": "NODE_OBJ_IS_FIELD_ACCESS_ISSUE",
@@ -931,10 +931,10 @@
       "type": "TERMINAL",
       "swimlane": "Field Access Issue",
       "domain": "OBJECT",
-      "root_cause": "OBJECT-3",
-      "issue_code": "OBJECT-3",
-      "skill_file": "app/skills/issues/OBJECT-3-field-access-issue.md",
-      "description": "Confirmed root cause: User lacks required Field-Level Security (FLS) permissions"
+      "root_cause": "OBJECT-2B",
+      "issue_code": "OBJECT-2B",
+      "skill_file": "app/skills/issues/OBJECT-2B-field-access-issue.md",
+      "description": "Confirmed root cause: User lacks required Field-Level Security (FLS) permissions (FieldPermissions differ from mirror user)"
     },
     {
       "id": "TERMINAL_OBJ_MANUAL_REVIEW",

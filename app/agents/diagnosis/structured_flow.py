@@ -340,6 +340,16 @@ class StructuredDiagnosisFlow:
                 decision_basis = current_node.get("decision_basis", f"Flowchart terminated at {node_name}")
                 expected = current_node.get("expected_criteria", "Standard diagnostic pattern")
 
+                # Dynamic refinement for Wizard vs Product Search in Object domain
+                if node_id == "TERMINAL_OBJ_WIZARD_COUNTRY_BLANK":
+                    if state_vars.get("is_product_search"):
+                        issue_code = "OBJECT-3"
+                        decision_basis = "Confirmed root cause: Contact Wizard_Country__c field is missing/blank, blocking Product Search access (OBJECT-3)."
+                    else:
+                        issue_code = "OBJECT-1"
+                        decision_basis = "Confirmed root cause: Contact Wizard_Country__c field is missing/blank, blocking Wizard Application access (OBJECT-1)."
+                    expected = "User exists in NA Org AND IsActive = True AND Contact.Wizard_Country__c IS NULL OR Blank"
+
                 self._record_traversal_step(
                     swimlane=swimlane,
                     node_id=node_id,
@@ -415,6 +425,10 @@ class StructuredDiagnosisFlow:
                             servicenow_record_ritm_guidance(inc_id, "Manage User - Account Reactivation", decision_basis, agent_name="StructuredDiagnosisFlow")
                         elif issue_code in ["LOGIN-5", "LOGIN-005"]:
                             servicenow_record_ritm_guidance(inc_id, "Manage User - Federation ID Correction", decision_basis, agent_name="StructuredDiagnosisFlow")
+                        elif issue_code in ["OBJECT-2A", "OBJECT-2", "OBJECT-002"]:
+                            servicenow_record_ritm_guidance(inc_id, "Manage User - Object CRUD Permission Set Assignment", decision_basis, agent_name="StructuredDiagnosisFlow")
+                        elif issue_code in ["OBJECT-2B", "OBJECT-FLS-MISSING"]:
+                            servicenow_record_ritm_guidance(inc_id, "Manage User - Field-Level Security Permission Set Assignment", decision_basis, agent_name="StructuredDiagnosisFlow")
                         else:
                             servicenow_add_work_notes(inc_id, f"Diagnosed root cause '{issue_code}': {decision_basis}", stage="diagnosis", agent_name="StructuredDiagnosisFlow")
 
@@ -1042,10 +1056,46 @@ class StructuredDiagnosisFlow:
 
         elif action_type == "classify_object_issue":
             has_wiz = any(k in full_text for k in ["wizard", "product search", "wizard app", "blank wizard"])
-            has_obj_field = any(k in full_text for k in ["object access", "field access", "fls", "permission", "cannot view", "cannot edit", "insufficient privileges", "object permission"])
-            is_obj = any(k in full_text for k in ["object access", "crud", "object permission", "cannot create record", "cannot delete record", "insufficient privileges on object"])
-            is_field = any(k in full_text for k in ["field access", "fls", "field not visible", "field not editable", "cannot edit field", "cannot view field", "field permission"])
-            
+            is_wiz_app = any(k in full_text for k in ["wizard app", "wizard application"])
+            is_product_search = any(k in full_text for k in ["product search", "product search object", "cannot search products", "product search issue"]) and not is_wiz_app
+            if "is_product_search" not in state_vars:
+                state_vars["is_product_search"] = is_product_search
+
+            obj_field_cues = [
+                "object access", "field access", "fls", "permission", "cannot view", "cannot edit",
+                "unable to edit", "cannot delete", "unable to delete", "cannot create", "unable to create",
+                "cannot update", "unable to update", "insufficient privileges", "object permission",
+                "field permission", "edit account", "edit contact", "edit opportunity", "edit lead",
+                "edit case", "edit record", "unable to edit some objects", "cannot edit account details",
+                "delete record", "create record", "crud", "object", "field"
+            ]
+            has_obj_field = any(k in full_text for k in obj_field_cues)
+
+            field_cues = [
+                "field access", "fls", "field not visible", "field not editable", "cannot edit field",
+                "cannot view field", "field permission", "field-level", "field level", "read-only field",
+                "field is read only", "hidden field", "missing field", "cannot see field", "particular field"
+            ]
+            is_field = any(k in full_text for k in field_cues)
+
+            obj_cues = [
+                "object access", "crud", "object permission", "cannot create record", "cannot delete record",
+                "cannot edit record", "cannot update record", "insufficient privileges on object",
+                "insufficient privileges", "cannot edit", "unable to edit", "cannot delete", "unable to delete",
+                "cannot create", "unable to create", "edit account", "edit contact", "edit opportunity",
+                "edit lead", "edit case", "edit record", "unable to edit some objects", "cannot edit account details",
+                "cannot delete account", "cannot create account", "object-level", "object level", "object"
+            ]
+            is_obj = (any(k in full_text for k in obj_cues) or not is_field) and not has_wiz
+
+            # In OBJECT domain: if it is not a wizard symptom, it is an object or field issue
+            if not has_wiz:
+                has_obj_field = True
+                if is_field:
+                    is_obj = False
+                else:
+                    is_obj = True
+
             if "has_wizard_symptom" not in state_vars:
                 state_vars["has_wizard_symptom"] = has_wiz
             if "has_object_or_field_symptom" not in state_vars:
@@ -1054,9 +1104,10 @@ class StructuredDiagnosisFlow:
                 state_vars["is_object_access_issue"] = is_obj
             if "is_field_access_issue" not in state_vars:
                 state_vars["is_field_access_issue"] = is_field
-            
+
             return {
                 "HasWizardSymptom": state_vars["has_wizard_symptom"],
+                "IsProductSearch": state_vars.get("is_product_search", False),
                 "HasObjectOrFieldSymptom": state_vars["has_object_or_field_symptom"],
                 "IsObjectAccessIssue": state_vars["is_object_access_issue"],
                 "IsFieldAccessIssue": state_vars["is_field_access_issue"],

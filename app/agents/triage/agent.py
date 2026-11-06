@@ -591,7 +591,10 @@ class TriageAgent:
             "permission to edit", "permission to create", "permission to delete", 
             "lacks permission", "cannot edit account", "cannot edit contact", "cannot edit opportunity", 
             "field-level security", "fls", "wizard app", "wizard country", "product search", 
-            "object permission", "profile permission", "crud", "sales profile"
+            "object permission", "profile permission", "crud", "sales profile",
+            "cannot edit", "unable to edit", "cannot delete", "unable to delete", "cannot create", "unable to create",
+            "unable to edit some objects", "cannot edit account details", "edit account details", "object access", "field access",
+            "cannot view field", "cannot edit field", "field not visible", "field not editable", "particular field"
         ]
         
         # Login indicators: SSO, Federation, account active, lockout, MFA, auth

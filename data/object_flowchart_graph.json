@@ -54,7 +54,7 @@
       "description": "Confirmed root cause: Contact Wizard_Country__c field is missing/blank, blocking Wizard App and Product Search",
       "name": "Confirmed: Wizard_Country__c is blank",
       "status": "confirmed",
-      "expected_criteria": "Confirmed root cause: Contact Wizard_Country__c field is missing/blank, blocking Wizard App and Product Search",
+      "expected_criteria": "User exists in NA Org AND IsActive = True AND Contact.Wizard_Country__c IS NULL OR Blank",
       "decision_basis": "Confirmed root cause: Contact Wizard_Country__c field is missing/blank, blocking Wizard App and Product Search"
     },
     {
@@ -83,14 +83,14 @@
       "type": "terminal",
       "swimlane": "Object Access Issue",
       "domain": "OBJECT",
-      "root_cause": "OBJECT-2",
-      "issue_code": "OBJECT-2",
-      "skill_file": "app/skills/issues/OBJECT-2-object-access-issue.md",
-      "description": "Confirmed root cause: User lacks required Object CRUD permissions on profile or permission sets",
+      "root_cause": "OBJECT-2A",
+      "issue_code": "OBJECT-2A",
+      "skill_file": "app/skills/issues/OBJECT-2A-object-access-issue.md",
+      "description": "Confirmed root cause: User lacks required Object CRUD permissions on profile or permission sets (ObjectPermissions differ from mirror user)",
       "name": "Confirmed: Object Access Issue",
       "status": "confirmed",
-      "expected_criteria": "Confirmed root cause: User lacks required Object CRUD permissions on profile or permission sets",
-      "decision_basis": "Confirmed root cause: User lacks required Object CRUD permissions on profile or permission sets"
+      "expected_criteria": "User exists in NA Org AND IsActive = True AND ObjectPermissions differ from Mirror User",
+      "decision_basis": "Confirmed root cause: User lacks required Object CRUD permissions (PermissionsRead/Create/Edit/Delete) on profile or permission sets, differing from mirror user."
     },
     {
       "id": "NODE_OBJ_IS_FIELD_ACCESS_ISSUE",
@@ -108,14 +108,14 @@
       "type": "terminal",
       "swimlane": "Field Access Issue",
       "domain": "OBJECT",
-      "root_cause": "OBJECT-3",
-      "issue_code": "OBJECT-3",
-      "skill_file": "app/skills/issues/OBJECT-3-field-access-issue.md",
-      "description": "Confirmed root cause: User lacks required Field-Level Security (FLS) permissions",
+      "root_cause": "OBJECT-2B",
+      "issue_code": "OBJECT-2B",
+      "skill_file": "app/skills/issues/OBJECT-2B-field-access-issue.md",
+      "description": "Confirmed root cause: User lacks required Field-Level Security (FLS) permissions (FieldPermissions differ from mirror user)",
       "name": "Confirmed: Field Access Issue",
       "status": "confirmed",
-      "expected_criteria": "Confirmed root cause: User lacks required Field-Level Security (FLS) permissions",
-      "decision_basis": "Confirmed root cause: User lacks required Field-Level Security (FLS) permissions"
+      "expected_criteria": "User exists in NA Org AND IsActive = True AND FieldPermissions differ from Mirror User",
+      "decision_basis": "Confirmed root cause: User lacks required Field-Level Security (FLS) permissions (PermissionsRead/Edit) on profile or permission sets, differing from mirror user."
     },
     {
       "id": "TERMINAL_OBJ_MANUAL_REVIEW",

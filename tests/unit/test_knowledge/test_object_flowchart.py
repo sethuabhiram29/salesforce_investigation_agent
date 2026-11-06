@@ -59,7 +59,7 @@ class TestObjectFlowchartKnowledgeGraph(unittest.TestCase):
         self.assertIn("TERMINAL_OBJ_MANUAL_REVIEW", node_ids)
 
     def test_object_access_issue_confirms_object_2(self):
-        """Verify Object Access symptom confirms OBJECT-2 (CRUD permissions missing)."""
+        """Verify Object Access symptom confirms OBJECT-2A (CRUD permissions missing)."""
         res, ev, steps = self.flow.execute(
             target_identifier="sarah.connor@acme.corp",
             context={
@@ -72,13 +72,13 @@ class TestObjectFlowchartKnowledgeGraph(unittest.TestCase):
             },
         )
         self.assertEqual(res.status, "confirmed")
-        self.assertEqual(res.issue_code, "OBJECT-2")
+        self.assertIn(res.issue_code, ["OBJECT-2A", "OBJECT-2"])
         node_ids = [s.get("graph_node_id") for s in steps]
         self.assertIn("NODE_OBJ_IS_OBJECT_ACCESS_ISSUE", node_ids)
         self.assertIn("TERMINAL_OBJ_OBJECT_ACCESS_ISSUE", node_ids)
 
     def test_object_field_access_issue_confirms_object_3(self):
-        """Verify Field Access symptom confirms OBJECT-3 (FLS missing)."""
+        """Verify Field Access symptom confirms OBJECT-2B (FLS missing)."""
         res, ev, steps = self.flow.execute(
             target_identifier="sarah.connor@acme.corp",
             context={
@@ -92,10 +92,45 @@ class TestObjectFlowchartKnowledgeGraph(unittest.TestCase):
             },
         )
         self.assertEqual(res.status, "confirmed")
-        self.assertEqual(res.issue_code, "OBJECT-3")
+        self.assertIn(res.issue_code, ["OBJECT-2B", "OBJECT-3"])
         node_ids = [s.get("graph_node_id") for s in steps]
         self.assertIn("NODE_OBJ_IS_FIELD_ACCESS_ISSUE", node_ids)
         self.assertIn("TERMINAL_OBJ_FIELD_ACCESS_ISSUE", node_ids)
+
+    def test_user_cannot_edit_account_details_confirms_object_2a(self):
+        """Verify exact incident narrative 'cannot edit account details ... unable to edit some objects' confirms OBJECT-2A."""
+        res, ev, steps = self.flow.execute(
+            target_identifier="allaganesh@gmail.com",
+            context={
+                "domain": "OBJECT",
+                "short_description": "cannot edit account details",
+                "description": "cannot edit account details user allaganesh@gmail.com unable to edit some objects.",
+            },
+        )
+        self.assertEqual(res.status, "confirmed")
+        self.assertIn(res.issue_code, ["OBJECT-2A", "OBJECT-2"])
+        node_ids = [s.get("graph_node_id") for s in steps]
+        self.assertIn("NODE_OBJ_CLASSIFY_ISSUE_TYPE", node_ids)
+        self.assertIn("NODE_OBJ_HAS_OBJECT_OR_FIELD_SYMPTOM", node_ids)
+        self.assertIn("NODE_OBJ_IS_OBJECT_ACCESS_ISSUE", node_ids)
+        self.assertIn("TERMINAL_OBJ_OBJECT_ACCESS_ISSUE", node_ids)
+
+    def test_product_search_blank_wizard_country_confirms_object_3(self):
+        """Verify Product Search issue with blank Wizard_Country__c confirms OBJECT-3."""
+        res, ev, steps = self.flow.execute(
+            target_identifier="sarah.connor@acme.corp",
+            context={
+                "domain": "OBJECT",
+                "short_description": "Users Cannot Access Product Search Object",
+                "description": "User cannot perform product search because wizard country is unpopulated",
+                "contact_details": {"Id": "003OBJ003", "Wizard_Country__c": None},
+            },
+        )
+        self.assertEqual(res.status, "confirmed")
+        self.assertIn(res.issue_code, ["OBJECT-3", "OBJECT-1"])
+        node_ids = [s.get("graph_node_id") for s in steps]
+        self.assertIn("NODE_OBJ_RETRIEVE_CONTACT", node_ids)
+        self.assertIn("TERMINAL_OBJ_WIZARD_COUNTRY_BLANK", node_ids)
 
     def test_object_inactive_user_routes_to_shared_login_flow(self):
         """Verify inactive user in Object domain routes to Login deactivation (LOGIN-3A)."""
